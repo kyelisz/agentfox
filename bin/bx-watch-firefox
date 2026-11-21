@@ -1,0 +1,8 @@
+#!/bin/sh
+# shim so that `bx-firefox` works from a symlink on PATH
+SELF="$0"
+while [ -L "$SELF" ]; do
+  T="$(readlink "$SELF")"
+  case "$T" in /*) SELF="$T" ;; *) SELF="$(dirname "$SELF")/$T" ;; esac
+done
+exec node "$(cd "$(dirname "$SELF")" && pwd)/bx-watch-firefox.mjs" "$@"

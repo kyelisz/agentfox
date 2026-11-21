@@ -33,7 +33,7 @@ fi
 ok "firefox: $(node -p 'require("./bin/lib/platform").findFirefox()')"
 
 PROFILE="$(node -p 'require("./bin/lib/platform").findProfile() || ""')"
-[ -n "$PROFILE" ] || { bad "no Firefox profile found — start Firefox once, then run this again"; exit 1; }
+[ -n "$PROFILE" ] && [ -d "$PROFILE" ] || { bad "no Firefox profile found — start Firefox once, then run this again"; exit 1; }
 ok "profile: $PROFILE"
 
 say "2/6  installing the bridge dependencies"
