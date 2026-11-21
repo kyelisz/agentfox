@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Firefox Bridge (free-pi)",
+  "version": "1.0.0",
+  "description": "Lets a local free-pi agent read and drive your Firefox tabs over a loopback socket. Private, local-only.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-bridge@free-pi.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1/",
+    "ws://127.0.0.1/"
+  ],
+  "background": {
+    "scripts": [
+      "page.js",
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "Firefox Bridge",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

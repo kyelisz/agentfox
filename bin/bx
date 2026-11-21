@@ -1,0 +1,497 @@
+#!/usr/bin/env node
+/**
+ * bx — drive Firefox from the terminal through the firefox-bridge extension.
+ * Zero config: `bx up` starts the local bridge (if needed) and waits for the
+ * extension. Every other command auto-starts the bridge too.
+ */
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const RUN = path.join(ROOT, 'run');
+const PORT = Number(process.env.BX_PORT || 8788);
+const BASE = `http://127.0.0.1:${PORT}`;
+const TOKEN_FILE = path.join(RUN, 'token');
+const PID_FILE = path.join(RUN, 'server.pid');
+const LOG_FILE = path.join(RUN, 'server.log');
+
+let clientId = '';
+const token = () => {
+  try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
+};
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function health(timeoutMs = 800) {
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    const r = await fetch(`${BASE}/health`, { signal: ac.signal });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function ensureServer({ quiet = false } = {}) {
+  let h = await health();
+  if (h) return h;
+  fs.mkdirSync(RUN, { recursive: true });
+  const out = fs.openSync(LOG_FILE, 'a');
+  const child = spawn(process.execPath, [path.join(ROOT, 'bridge', 'server.js')], {
+    detached: true,
+    stdio: ['ignore', out, out],
+    env: { ...process.env, BX_PORT: String(PORT) },
+  });
+  child.unref();
+  for (let i = 0; i < 60; i++) {
+    await sleep(100);
+    h = await health();
+    if (h) return h;
+  }
+  throw new Error(`could not start bridge, see ${LOG_FILE}`);
+}
+
+async function api(action, params = {}, timeoutMs = 30000) {
+  await ensureServer();
+  // one place for --tab: every action that can target a tab gets it here
+  if (globalThis.__bxTab && params.tabId === undefined) params.tabId = Number(globalThis.__bxTab);
+  const r = await fetch(`${BASE}/api`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-bx-token': token() },
+    body: JSON.stringify({ action, params: { ...params, timeoutMs }, cid: process.env.BX_CLIENT || clientId || undefined }),
+  });
+  const body = await r.json().catch(() => ({ ok: false, error: 'BAD_RESPONSE' }));
+  if (!body.ok) {
+    const err = new Error(body.error || 'UNKNOWN');
+    err.code = body.error;
+    throw err;
+  }
+  return body.result;
+}
+
+/* ------------------------------------------------------------------ output */
+
+function print(value) {
+  if (typeof value === 'string') process.stdout.write(value.endsWith('\n') ? value : value + '\n');
+  else process.stdout.write(JSON.stringify(value, null, 2) + '\n');
+}
+
+const HINT_NO_EXT = `The Firefox extension is not connected.
+
+  1) open Firefox and go to  about:debugging#/runtime/this-firefox
+  2) "Load Temporary Add-on…"  ->  ${path.join(ROOT, 'extension', 'manifest.json')}
+  3) run \`bx status\` again
+
+(see ${path.join(ROOT, 'docs', 'SETUP.md')} for a permanent install)`;
+
+function fail(err) {
+  const msg = String(err.message || err);
+  if (msg.startsWith('NO_EXTENSION')) {
+    process.stderr.write(HINT_NO_EXT + '\n');
+    process.exit(2);
+  }
+  process.stderr.write(`bx: ${msg}\n`);
+  process.exit(1);
+}
+
+/* ---------------------------------------------------------------- commands */
+
+function parseArgs(argv) {
+  const pos = [];
+  const flags = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--') { pos.push(...argv.slice(i + 1)); break; }
+    if (a.startsWith('--')) {
+      const [k, v] = a.slice(2).split('=');
+      if (v !== undefined) flags[k] = v;
+      else if (argv[i + 1] && !argv[i + 1].startsWith('--')) { flags[k] = argv[i + 1]; i++; }
+      else flags[k] = true;
+    } else pos.push(a);
+  }
+  return { pos, flags };
+}
+
+function apiUrl(pathAndQuery) {
+  return `${BASE}${pathAndQuery}`;
+}
+
+async function bridgeGet(pathAndQuery, timeoutMs = 30000) {
+  await ensureServer();
+  const sep = pathAndQuery.includes('?') ? '&' : '?';
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs + 5000);
+  try {
+    const r = await fetch(`${BASE}${pathAndQuery}${sep}token=${token()}`, { cache: 'no-store', signal: ac.signal });
+    const body = await r.json().catch(() => ({ ok: false, error: 'BAD_RESPONSE' }));
+    return body;
+  } finally { clearTimeout(t); }
+}
+
+async function bridgePost(pathAndQuery, payload) {
+  await ensureServer();
+  const sep = pathAndQuery.includes('?') ? '&' : '?';
+  const r = await fetch(`${BASE}${pathAndQuery}${sep}token=${token()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  return r.json().catch(() => ({ ok: false, error: 'BAD_RESPONSE' }));
+}
+
+async function saveShot(dataUrl, dest) {
+  const b64 = String(dataUrl).split(',').pop();
+  const dir = dest ? path.dirname(path.resolve(dest)) : path.join(process.cwd(), '.pi-browser');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = dest
+    ? path.resolve(dest)
+    : path.join(dir, `shot-${new Date().toISOString().replace(/[:.]/g, '-')}.png`);
+  fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+  return file;
+}
+
+const HELP = `bx — Firefox bridge for free-pi
+
+  bx status                     bridge + extension + active tab
+  bx tabs                       list tabs (id, title, url)
+  bx open <url>                 open url in a new tab
+  bx goto <url>                 navigate the active tab
+  bx back|forward|reload|stop
+  bx read [--full]              page digest: text + interactive elements (refs)
+  bx find <text>                elements matching text, with refs
+  bx click <ref|css|text>       click element            --index N
+  bx dblclick <ref|css|text>
+  bx type <text> [--into <ref|css>] [--enter] [--clear] [--stdin]
+  bx press <key>                e.g. Enter, Escape, Tab, Control+a
+  bx select <ref|css> <value>
+  bx check <ref|css> [--off]
+  bx scroll [--by 600|--to bottom|--into <ref>]
+  bx shot [--out file.png]      screenshot of the visible tab -> file
+  bx eval <js>                  run js in the page, returns the value
+  bx wait [--ms 500] [--selector css] [--text str] [--timeout 10000]
+  bx up | down | logs | pack | setup | forever | doctor
+  bx chatagent on|off|status|log   # its own free-pi session answers the chat box
+  bx threads                    # chat-box conversations (the History list)
+  bx settings                   # the two switches: askLocalhost, alwaysOn
+  bx settings set alwaysOn on
+
+Chat box in the page (the user types straight to you):
+  bx panel [on|off]            show/hide it in the active tab (Alt+Shift+B also toggles)
+  bx inbox [--peek]            messages the user typed, newest last
+  bx watch [--timeout 240]     wait until the user types something
+  bx say "text" [--tab N|--all]  reply into the box
+  bx raw <action> '<json>'      call any bridge action directly
+
+Desktop control while a page is open (also useful for login flows):
+  bx keys "user@example.com"    type into the focused field, char by char
+`;
+
+async function main() {
+  const { pos, flags } = parseArgs(process.argv.slice(2));
+  if (flags.client && flags.client !== true) clientId = String(flags.client);
+  if (flags.tab && flags.tab !== true) globalThis.__bxTab = Number(flags.tab);
+  const cmd = pos[0];
+  const rest = pos.slice(1);
+  if (!cmd || cmd === 'help' || flags.help) return print(HELP);
+
+  const index = flags.index !== undefined ? Number(flags.index) : 0;
+
+  switch (cmd) {
+    case 'up': {
+      const h = await ensureServer();
+      if (!h.extension) {
+        process.stdout.write(`bridge up on ${BASE}\nwaiting for the extension…\n\n${HINT_NO_EXT}\n`);
+        process.exit(h.extension ? 0 : 3);
+      }
+      return print({ ok: true, bridge: BASE, extension: true });
+    }
+    case 'down': {
+      let pid = 0;
+      try { pid = Number(fs.readFileSync(PID_FILE, 'utf8').trim()); } catch {}
+      const h = await health();
+      if (!h) return print({ ok: true, already: 'stopped' });
+      const target = pid || h.pid;
+      try { process.kill(target, 'SIGTERM'); } catch {}
+      for (let i = 0; i < 30; i++) { await sleep(100); if (!(await health())) break; }
+      return print({ ok: true, stopped: target });
+    }
+    case 'logs': {
+      const tail = Number(flags.n || 40);
+      try { print(fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n').slice(-tail).join('\n')); }
+      catch { print('(no log yet)'); }
+      return;
+    }
+    case 'status': {
+      const h = await ensureServer();
+      const out = { bridge: BASE, extension: !!h.extension };
+      if (h.extension) {
+        try { out.tab = await api('status'); } catch (e) { out.error = String(e.message); }
+      } else out.hint = HINT_NO_EXT;
+      return print(out);
+    }
+    case 'tabs': return print(await api('tabs'));
+    case 'open': return print(await api('goto', { url: rest[0], newTab: true }));
+    case 'goto': return print(await api('goto', { url: rest[0] }));
+    case 'back': return print(await api('history', { dir: -1 }));
+    case 'forward': return print(await api('history', { dir: 1 }));
+    case 'reload': return print(await api('reload', {}));
+    case 'stop': return print(await api('stop', {}));
+    case 'read': return print(await api('digest', {
+      full: !!flags.full,
+      maxText: flags.full ? 12000 : 5000,
+      maxEls: flags.full ? 400 : 120,
+      tabId: flags.tab ? Number(flags.tab) : undefined,
+    }));
+    case 'find': return print(await api('find', { query: rest.join(' ') }));
+    case 'click': return print(await api('click', { target: rest[0], index }));
+    case 'dblclick': return print(await api('click', { target: rest[0], index, dbl: true }));
+    case 'hover': return print(await api('hover', { target: rest[0], index }));
+    case 'type': {
+      let text = rest.join(' ');
+      if (flags.stdin) {
+        // keeps secrets out of argv / shell history
+        const chunks = [];
+        for await (const c of process.stdin) chunks.push(c);
+        text = Buffer.concat(chunks).toString('utf8').replace(/\n$/, '');
+      }
+      if (!text) return print('bx type: give some text (or --stdin)');
+      const r = await api('type', {
+        text,
+        target: flags.into && flags.into !== true ? flags.into : undefined,
+        submit: !!flags.enter,
+        clear: !!flags.clear,
+      }, 45000);
+      return print(r);
+    }
+    case 'keys': {
+      const text = rest.join(' ');
+      if (!text) return print('bx keys: give some text');
+      return print(await api('keys', { text }, 45000));
+    }
+    case 'press': return print(await api('press', { key: rest.join(' '), target: flags.into || undefined }));
+    case 'select': return print(await api('select', { target: rest[0], value: rest[1] }));
+    case 'check': return print(await api('check', { target: rest[0], on: !flags.off }));
+    case 'scroll': return print(await api('scroll', {
+      by: flags.by ? Number(flags.by) : undefined,
+      to: flags.to && flags.to !== true ? flags.to : undefined,
+      into: flags.into && flags.into !== true ? flags.into : undefined,
+    }));
+    case 'shot': {
+      const out = await api('shot', {}, 20000);
+      if (!out || !out.dataUrl) return print(out);
+      const file = await saveShot(out.dataUrl, flags.out && flags.out !== true ? flags.out : undefined);
+      return print({ ok: true, file, tab: out.tab });
+    }
+    case 'eval': return print(await api('eval', { code: rest.join(' ') }));
+    case 'wait': return print(await api('wait', {
+      ms: flags.ms ? Number(flags.ms) : undefined,
+      selector: flags.selector && flags.selector !== true ? flags.selector : undefined,
+      text: flags.text && flags.text !== true ? flags.text : undefined,
+      timeout: flags.timeout ? Number(flags.timeout) : 10000,
+    }, 20000 + (flags.timeout ? Number(flags.timeout) : 10000)));
+    case 'doctor': {
+      // one command that says what is broken, in plain words
+      const pl = require('./lib/platform');
+      const fsx = require('fs');
+      const { execFileSync } = require('child_process');
+      const checks = [];
+      const add0 = (name, okv, hint) => checks.push({ check: name, ok: !!okv, ...(okv ? {} : { fix: hint }) });
+      add0('node 18+', Number(process.versions.node.split('.')[0]) >= 18, 'install Node 18+ from nodejs.org');
+      const ff = pl.findFirefox();
+      add0('firefox binary', ff, 'set BX_FIREFOX_BIN to your firefox executable');
+      const prof = pl.findProfile();
+      add0('firefox profile', prof, 'start Firefox once, or set BX_PROFILE');
+      if (prof) {
+        const uj = path.join(prof, 'user.js');
+        let u = '';
+        try { u = fsx.readFileSync(uj, 'utf8'); } catch {}
+        add0('debugger prefs', /devtools\.debugger\.remote-enabled", true/.test(u) && /devtools\.chrome\.enabled", true/.test(u), 'run: bx forever');
+      }
+      add0('add-on build', fsx.existsSync(path.join(ROOT, 'dist', 'firefox-bridge.xpi')), 'run: bx pack');
+      add0('ws module', (() => { try { require.resolve('ws', { paths: [ROOT] }); return true; } catch { return false; } })(), 'run: npm install');
+      let health = null;
+      try { health = await bridgeGet('/health', 3000); } catch {}
+      add0('bridge running', health && health.ok, 'run: bx up');
+      add0('extension connected', health && health.extension, 'quit Firefox and start it through bx-firefox (or bake it into the icon with bx forever)');
+      let tmux = false;
+      try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }); tmux = true; } catch {}
+      add0('tmux (optional, for bx chatagent)', tmux || !health, 'install tmux, or use the box as a queue for your own session');
+      const bad0 = checks.filter((c) => !c.ok);
+      return print({ ok: bad0.length === 0, checks, next: bad0.length ? bad0.map((c) => c.check + ': ' + c.fix) : 'all good' });
+    }
+    case 'threads': {
+      const r = await bridgeGet('/chat/threads');
+      return print({ current: r.current, threads: (r.threads || []).map((t) => ({ id: t.id, messages: t.count, title: t.title })) });
+    }
+    case 'settings': {
+      const sub = (pos[1] || '').toLowerCase();
+      if (sub === 'set') {
+        const key = (pos[2] || '').toLowerCase();
+        const val = (pos[3] || '').toLowerCase();
+        if (!['asklocalhost', 'alwayson'].includes(key)) return fail('usage: bx settings set askLocalhost|alwaysOn on|off');
+        if (!['on', 'off', 'true', 'false'].includes(val)) return fail('usage: bx settings set ' + pos[2] + ' on|off');
+        const body = key === 'asklocalhost' ? { askLocalhost: val === 'on' || val === 'true' } : { alwaysOn: val === 'on' || val === 'true' };
+        return print(await bridgePost('/settings', body));
+      }
+      return print(await bridgeGet('/settings'));
+    }
+    case 'chatagent': {
+      // the second free-pi session that answers the chat box on its own
+      const { spawn } = require('child_process');
+      const sub = (pos[1] || 'status').toLowerCase();
+      const script = path.join(ROOT, 'bin', 'bx-chat-agent.mjs');
+      const alive = () => {
+        try {
+          const pids = require('fs').readdirSync('/proc').filter((d) => /^\d+$/.test(d));
+          return pids.some((pid) => {
+            try {
+              if (require('fs').readFileSync(`/proc/${pid}/comm`, 'utf8').trim() !== 'node') return false;
+              const cl = require('fs').readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ');
+              return cl.includes('bx-chat-agent.mjs') && cl.includes('start');
+            } catch { return false; }
+          });
+        } catch { return false; }
+      };
+      if (sub === 'on' || sub === 'start') {
+        if (alive()) return print({ ok: true, already: true, note: 'the chat agent is already listening' });
+        spawn(process.execPath, [script, 'start'], { detached: true, stdio: 'ignore', cwd: ROOT }).unref();
+        return print({ ok: true, started: true, note: 'second free-pi session starting in tmux; first answer takes ~40s', log: path.join(ROOT, 'run', 'chat-agent.log') });
+      }
+      if (sub === 'off' || sub === 'stop') {
+        spawn(process.execPath, [script, 'stop'], { detached: true, stdio: 'ignore' }).unref();
+        return print({ ok: true, stopped: true });
+      }
+      if (sub === 'log') {
+        const f = path.join(ROOT, 'run', 'chat-agent.log');
+        const tail = require('fs').existsSync(f) ? require('fs').readFileSync(f, 'utf8').trim().split('\n').slice(-15).join('\n') : 'no log yet';
+        return print({ ok: true, log: tail });
+      }
+      return print({ ok: true, listening: alive() });
+    }
+    case 'forever': {
+      // make the add-on survive Firefox restarts without any clicking:
+      // prefs so the debugger port opens, a launcher that installs over RDP,
+      // and a desktop entry pointing at that launcher.
+      const fs = require('fs');
+      const os = require('os');
+      const pl = require('./lib/platform');
+      const prof = pl.findProfile();
+      if (!prof || !fs.existsSync(prof)) return fail('no Firefox profile found — set BX_PROFILE to your profile folder');
+      const prefs = [
+        'user_pref("devtools.debugger.remote-enabled", true);',
+        'user_pref("devtools.debugger.prompt-connection", false);',
+        'user_pref("devtools.chrome.enabled", true);',
+      ];
+      const userjs = path.join(prof, 'user.js');
+      const have = fs.existsSync(userjs) ? fs.readFileSync(userjs, 'utf8') : '';
+      const add = prefs.filter((l) => !have.split('\n').includes(l));
+      if (add.length) fs.appendFileSync(userjs, '\n' + add.join('\n') + '\n');
+      const launcher = path.join(os.homedir(), '.local', 'bin', 'bx-firefox');
+      if (!pl.isWin) {
+        try {
+          fs.mkdirSync(path.dirname(launcher), { recursive: true });
+          fs.chmodSync(path.join(ROOT, 'bin', 'bx-firefox'), 0o755);
+          try { fs.unlinkSync(launcher); } catch {}
+          fs.symlinkSync(path.join(ROOT, 'bin', 'bx-firefox'), launcher);
+        } catch {}
+      }
+      let desktop = null;
+      if (pl.isLinux) {
+        const sys = ['/usr/share/applications/firefox.desktop', '/usr/local/share/applications/firefox.desktop'].find((p) => fs.existsSync(p));
+        const dst = path.join(os.homedir(), '.local', 'share', 'applications', 'firefox.desktop');
+        try {
+          if (sys) {
+            const body = fs.readFileSync(sys, 'utf8').replace(/^Exec=firefox /gm, `Exec=${launcher} `);
+            fs.mkdirSync(path.dirname(dst), { recursive: true });
+            fs.writeFileSync(dst, body);
+            desktop = dst;
+          }
+        } catch {}
+        try { require('child_process').execFileSync('update-desktop-database', [path.dirname(dst)], { stdio: 'ignore' }); } catch {}
+      }
+      return print({
+        ok: true,
+        profile: prof,
+        prefs_added: add.length,
+        launcher,
+        desktop_entry: desktop,
+        next: [
+          'quit Firefox completely, then start it from the Firefox icon (the launcher installs the add-on in ~7s)',
+          'from a terminal: bx-firefox &',
+          'verify: bx status  ->  extension: true',
+        ],
+      });
+    }
+
+    case 'setup': {
+      // reopen the two windows needed to (re)load the add-on after a Firefox
+      // restart: about:debugging in Firefox + the folder holding the .xpi
+      const { spawn } = require('child_process');
+      const dist = path.join(ROOT, 'dist');
+      const xpi = path.join(dist, 'firefox-bridge.xpi');
+      const pl = require('./lib/platform');
+      const ff = pl.findFirefox() || 'firefox';
+      try { spawn(ff, ['-new-tab', 'about:debugging#/runtime/this-firefox'], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+      try {
+        const fm = ['thunar', 'nautilus', 'dolphin', 'pcmanfm'].find((c) => {
+          try { require('child_process').execFileSync('which', [c], { stdio: 'ignore' }); return true; } catch { return false; }
+        });
+        if (fm) spawn(fm, [dist], { detached: true, stdio: 'ignore' }).unref();
+      } catch {}
+      try {
+        require('child_process').execFileSync('xclip', ['-selection', 'clipboard'], { input: xpi });
+      } catch {}
+      return print({
+        ok: true,
+        step1: 'Firefox -> about:debugging#/runtime/this-firefox -> "Load Temporary Add-on\u2026"',
+        step2: 'pick dist/firefox-bridge.xpi (path is on your clipboard)',
+        xpi,
+        note: 'a Firefox restart drops the temporary add-on; run `bx setup` again and re-pick it',
+      });
+    }
+    case 'inbox': {
+      // messages the user typed into the little box in their tab
+      const r = await bridgeGet(`/chat/inbox${flags.peek ? '?peek=1' : ''}`);
+      const msgs = r.messages || [];
+      if (!msgs.length) return print({ messages: [], note: 'no new messages from the chat box' });
+      return print(msgs.map((m) => ({ id: m.id, tab: m.tab, title: m.title || '', url: (m.url || '').slice(0, 120), text: m.text })));
+    }
+    case 'watch': {
+      // block until the user types something in the chat box
+      const ms = Math.min(Number(flags.timeout || 240), 300) * 1000;
+      const r = await bridgeGet(`/chat/watch?timeout=${ms}`, ms);
+      if (r.idle) return print({ idle: true, note: `nobody typed anything in ${Math.round(ms / 1000)}s` });
+      return print((r.messages || []).map((m) => ({ id: m.id, tab: m.tab, title: m.title || '', text: m.text })));
+    }
+    case 'say': {
+      const text = rest.join(' ');
+      if (!text) return print('bx say: give some text');
+      const tab = flags.all ? 'all' : (flags.tab ? Number(flags.tab) : undefined);
+      return print(await bridgePost('/chat/say', { text, tab }));
+    }
+    case 'panel':
+    case 'chat': {
+      const on = rest[0] || 'toggle';
+      const action = on === 'off' ? 'chat-close' : on === 'on' ? 'chat' : 'chat-toggle';
+      return print(await api(action, flags.tab ? { tabId: Number(flags.tab) } : {}));
+    }
+    case 'pack': {
+      // build dist/firefox-bridge.xpi (pure node, so it works on Windows too)
+      const { execFileSync } = require('child_process');
+      const out = path.join(ROOT, 'dist', 'firefox-bridge.xpi');
+      const r = execFileSync(process.execPath, [path.join(ROOT, 'bridge', 'make-xpi.js'), out], { encoding: 'utf8' });
+      return print(JSON.parse(r));
+    }
+    case 'raw': {
+      let params = {};
+      try { params = rest[1] ? JSON.parse(rest[1]) : {}; } catch { return print('bx raw: second arg must be json'); }
+      return print(await api(rest[0], params));
+    }
+    default:
+      return print(`bx: unknown command "${cmd}"\n\n${HELP}`);
+  }
+}
+
+main().catch(fail);

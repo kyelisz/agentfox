@@ -1,0 +1,7 @@
+node_modules/
+run/
+dist/*.xpi
+.pi-browser/
+.pi-presence/
+*.log
+.DS_Store

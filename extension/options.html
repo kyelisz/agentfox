@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Firefox Bridge — options</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 620px; margin: 32px auto; padding: 0 16px; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+    label { display: block; margin: 14px 0 4px; font-weight: 600; }
+    input[type=number] { width: 120px; padding: 6px; }
+    input[type=checkbox] { margin-right: 6px; }
+    button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; cursor: pointer; margin-top: 18px; }
+    .hint { opacity: .65; font-size: 12.5px; }
+    code { background: rgba(128,128,128,.18); padding: 1px 5px; border-radius: 4px; }
+    .box { border: 1px solid rgba(128,128,128,.35); border-radius: 10px; padding: 14px 16px; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <h2>Firefox Bridge</h2>
+  <p class="hint">Local only. The extension dials <code>ws://127.0.0.1:&lt;port&gt;</code> and only accepts
+  commands that arrive over that socket. No data leaves your machine and nothing is written to the cloud.</p>
+
+  <div class="box">
+    <label for="port">Bridge port</label>
+    <input id="port" type="number" min="1024" max="65535" step="1">
+    <p class="hint">Must match <code>BX_PORT</code> in the terminal (default 8788).</p>
+
+    <label><input id="readonly" type="checkbox"> Read-only mode (block click / type / eval)</label>
+
+    <label><input id="highlight" type="checkbox"> Flash a box on the page when clicking</label>
+
+    <button id="save">Save</button>
+    <span id="saved" class="hint"></span>
+  </div>
+  <div class="box">
+    <h2 style="margin:0 0 6px">What the agent is allowed to do</h2>
+    <p class="hint" style="margin-top:0">These two live in the bridge, so the agent reads them before it acts.</p>
+
+    <label><input id="askLocalhost" type="checkbox"> Ask me before it starts anything on localhost</label>
+    <p class="hint">Blocks the agent from opening a local web server / dev server / any port on
+    <code>127.0.0.1</code> without your explicit go-ahead. It must ask in the chat and wait for a yes.</p>
+
+    <label><input id="alwaysOn" type="checkbox"> Always on — free-pi with any browser, always in Firefox</label>
+    <p class="hint">Bridge + chat assistant start with your desktop, the Firefox launcher installs the
+    add-on at every start, the chat box follows you into every tab you open, and the agent keeps
+    working across every window and tab without a reconnect. Nothing else on the machine is touched.</p>
+
+    <button id="savePolicy">Save</button>
+    <span id="policySaved" class="hint"></span>
+  </div>
+
+  <p class="hint" style="margin-top:22px">Status is in the toolbar popup. Reconnect after changing the port.</p>
+  <script src="options.js"></script>
+</body>
+</html>
