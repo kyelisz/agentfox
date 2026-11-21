@@ -84,7 +84,7 @@ const HINT_NO_EXT = `The Firefox extension is not connected.
   2) "Load Temporary Add-on…"  ->  ${path.join(ROOT, 'extension', 'manifest.json')}
   3) run \`bx status\` again
 
-(see ${path.join(ROOT, 'docs', 'SETUP.md')} for a permanent install)`;
+(see ${path.join(ROOT, 'SKILL.md')} for a permanent install)`;
 
 function fail(err) {
   const msg = String(err.message || err);
@@ -171,7 +171,7 @@ const HELP = `bx — Firefox bridge for free-pi
   bx shot [--out file.png]      screenshot of the visible tab -> file
   bx eval <js>                  run js in the page, returns the value
   bx wait [--ms 500] [--selector css] [--text str] [--timeout 10000]
-  bx up | down | logs | pack | setup | forever | doctor
+  bx up | down | logs | pack | setup | forever
   bx chatagent on|off|status|log   # its own free-pi session answers the chat box
   bx threads                    # chat-box conversations (the History list)
   bx settings                   # the two switches: askLocalhost, alwaysOn
@@ -291,35 +291,24 @@ async function main() {
       text: flags.text && flags.text !== true ? flags.text : undefined,
       timeout: flags.timeout ? Number(flags.timeout) : 10000,
     }, 20000 + (flags.timeout ? Number(flags.timeout) : 10000)));
-    case 'doctor': {
-      // one command that says what is broken, in plain words
-      const pl = require('./lib/platform');
-      const fsx = require('fs');
-      const { execFileSync } = require('child_process');
-      const checks = [];
-      const add0 = (name, okv, hint) => checks.push({ check: name, ok: !!okv, ...(okv ? {} : { fix: hint }) });
-      add0('node 18+', Number(process.versions.node.split('.')[0]) >= 18, 'install Node 18+ from nodejs.org');
-      const ff = pl.findFirefox();
-      add0('firefox binary', ff, 'set BX_FIREFOX_BIN to your firefox executable');
-      const prof = pl.findProfile();
-      add0('firefox profile', prof, 'start Firefox once, or set BX_PROFILE');
-      if (prof) {
-        const uj = path.join(prof, 'user.js');
-        let u = '';
-        try { u = fsx.readFileSync(uj, 'utf8'); } catch {}
-        add0('debugger prefs', /devtools\.debugger\.remote-enabled", true/.test(u) && /devtools\.chrome\.enabled", true/.test(u), 'run: bx forever');
-      }
-      add0('add-on build', fsx.existsSync(path.join(ROOT, 'dist', 'firefox-bridge.xpi')), 'run: bx pack');
-      add0('ws module', (() => { try { require.resolve('ws', { paths: [ROOT] }); return true; } catch { return false; } })(), 'run: npm install');
-      let health = null;
-      try { health = await bridgeGet('/health', 3000); } catch {}
-      add0('bridge running', health && health.ok, 'run: bx up');
-      add0('extension connected', health && health.extension, 'quit Firefox and start it through bx-firefox (or bake it into the icon with bx forever)');
-      let tmux = false;
-      try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }); tmux = true; } catch {}
-      add0('tmux (optional, for bx chatagent)', tmux || !health, 'install tmux, or use the box as a queue for your own session');
-      const bad0 = checks.filter((c) => !c.ok);
-      return print({ ok: bad0.length === 0, checks, next: bad0.length ? bad0.map((c) => c.check + ': ' + c.fix) : 'all good' });
+    case 'notes': {
+      // the "study this run" notes the page asked for
+      const r = await bridgeGet('/study/list', 5000);
+      if (!r.runs || !r.runs.length) return print('no study runs yet — click the 🧠 button in the game, or POST /study');
+      return print(r.runs.map((x) => ({
+        when: x.when.replace('T', ' ').slice(0, 16),
+        game: x.game,
+        dir: x.dir,
+        notes: x.notes.join(' '),
+      })));
+    }
+    case 'study': {
+      // trigger a study from the terminal: bx study <dir> '<snapshot json>'
+      const dir = rest[0];
+      if (!dir) return print('bx study <project dir> [<snapshot json>]');
+      let snapshot = {};
+      try { snapshot = rest[1] ? JSON.parse(rest[1]) : {}; } catch { return print('bx study: snapshot must be json'); }
+      return print(await bridgePost('/study', { game: flags.game || snapshot.game, dir, snapshot }));
     }
     case 'threads': {
       const r = await bridgeGet('/chat/threads');
@@ -376,9 +365,16 @@ async function main() {
       // and a desktop entry pointing at that launcher.
       const fs = require('fs');
       const os = require('os');
-      const pl = require('./lib/platform');
-      const prof = pl.findProfile();
-      if (!prof || !fs.existsSync(prof)) return fail('no Firefox profile found — set BX_PROFILE to your profile folder');
+      const { execFileSync } = require('child_process');
+      const base = path.join(os.homedir(), '.mozilla', 'firefox');
+      let prof = '';
+      try {
+        const ini = fs.readFileSync(path.join(base, 'profiles.ini'), 'utf8');
+        const sec = ini.split(/\n(?=\[)/).find((b) => /^\[Profile\d*\]/.test(b) && /Name=default-release/.test(b));
+        const m = sec && sec.match(/Path=(.+)/);
+        if (m) prof = m[1].trim().startsWith('/') ? m[1].trim() : path.join(base, m[1].trim());
+      } catch {}
+      if (!prof || !fs.existsSync(prof)) return fail('no Firefox profile found at ' + base);
       const prefs = [
         'user_pref("devtools.debugger.remote-enabled", true);',
         'user_pref("devtools.debugger.prompt-connection", false);',
@@ -389,28 +385,19 @@ async function main() {
       const add = prefs.filter((l) => !have.split('\n').includes(l));
       if (add.length) fs.appendFileSync(userjs, '\n' + add.join('\n') + '\n');
       const launcher = path.join(os.homedir(), '.local', 'bin', 'bx-firefox');
-      if (!pl.isWin) {
-        try {
-          fs.mkdirSync(path.dirname(launcher), { recursive: true });
-          fs.chmodSync(path.join(ROOT, 'bin', 'bx-firefox'), 0o755);
-          try { fs.unlinkSync(launcher); } catch {}
-          fs.symlinkSync(path.join(ROOT, 'bin', 'bx-firefox'), launcher);
-        } catch {}
-      }
+      try { fs.mkdirSync(path.dirname(launcher), { recursive: true }); fs.chmodSync(path.join(ROOT, 'bin', 'bx-firefox'), 0o755); fs.symlinkSync(path.join(ROOT, 'bin', 'bx-firefox'), launcher); } catch {}
       let desktop = null;
-      if (pl.isLinux) {
-        const sys = ['/usr/share/applications/firefox.desktop', '/usr/local/share/applications/firefox.desktop'].find((p) => fs.existsSync(p));
-        const dst = path.join(os.homedir(), '.local', 'share', 'applications', 'firefox.desktop');
-        try {
-          if (sys) {
-            const body = fs.readFileSync(sys, 'utf8').replace(/^Exec=firefox /gm, `Exec=${launcher} `);
-            fs.mkdirSync(path.dirname(dst), { recursive: true });
-            fs.writeFileSync(dst, body);
-            desktop = dst;
-          }
-        } catch {}
-        try { require('child_process').execFileSync('update-desktop-database', [path.dirname(dst)], { stdio: 'ignore' }); } catch {}
-      }
+      const sys = '/usr/share/applications/firefox.desktop';
+      const dst = path.join(os.homedir(), '.local', 'share', 'applications', 'firefox.desktop');
+      try {
+        if (fs.existsSync(sys)) {
+          const body = fs.readFileSync(sys, 'utf8').replace(/^Exec=firefox /gm, `Exec=${launcher} `);
+          fs.mkdirSync(path.dirname(dst), { recursive: true });
+          fs.writeFileSync(dst, body);
+          desktop = dst;
+        }
+      } catch {}
+      try { execFileSync('update-desktop-database', [path.dirname(dst)], { stdio: 'ignore' }); } catch {}
       return print({
         ok: true,
         profile: prof,
@@ -431,9 +418,7 @@ async function main() {
       const { spawn } = require('child_process');
       const dist = path.join(ROOT, 'dist');
       const xpi = path.join(dist, 'firefox-bridge.xpi');
-      const pl = require('./lib/platform');
-      const ff = pl.findFirefox() || 'firefox';
-      try { spawn(ff, ['-new-tab', 'about:debugging#/runtime/this-firefox'], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+      try { spawn('firefox', ['-new-tab', 'about:debugging#/runtime/this-firefox'], { detached: true, stdio: 'ignore' }).unref(); } catch {}
       try {
         const fm = ['thunar', 'nautilus', 'dolphin', 'pcmanfm'].find((c) => {
           try { require('child_process').execFileSync('which', [c], { stdio: 'ignore' }); return true; } catch { return false; }
@@ -478,11 +463,17 @@ async function main() {
       return print(await api(action, flags.tab ? { tabId: Number(flags.tab) } : {}));
     }
     case 'pack': {
-      // build dist/firefox-bridge.xpi (pure node, so it works on Windows too)
+      // build a signed-able xpi for permanent installs (Developer Edition / AMO)
+      const fsx = require('fs');
       const { execFileSync } = require('child_process');
-      const out = path.join(ROOT, 'dist', 'firefox-bridge.xpi');
-      const r = execFileSync(process.execPath, [path.join(ROOT, 'bridge', 'make-xpi.js'), out], { encoding: 'utf8' });
-      return print(JSON.parse(r));
+      const dist = path.join(ROOT, 'dist');
+      fsx.mkdirSync(dist, { recursive: true });
+      const out = path.join(dist, 'firefox-bridge.xpi');
+      try { fsx.unlinkSync(out); } catch {}
+      execFileSync('zip', ['-qr', out, 'manifest.json', 'background.js', 'page.js', 'popup.html', 'popup.js', 'options.html', 'options.js', 'chat.css'], {
+        cwd: path.join(ROOT, 'extension'),
+      });
+      return print({ ok: true, xpi: out, size: fsx.statSync(out).size });
     }
     case 'raw': {
       let params = {};

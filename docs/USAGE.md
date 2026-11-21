@@ -62,6 +62,17 @@ In the box: `⤢` maximize, `＋ New` fresh conversation, `History` past
 conversations (click one to continue it), `Connect`/`Reconnect` for the local
 bridge, `×` hide here. Enter sends, Shift+Enter adds a line.
 
+## Notes the page asked for ("study this")
+
+```
+bx notes                          every study run: when, game, folder, files written
+bx study <dir> [<snapshot json>]  run the same study from the terminal
+```
+
+The `🧠` button in a page posts to `POST /study`; the bridge writes
+`notes/*.txt` next to that project. See [STUDY-BUTTON.md](STUDY-BUTTON.md),
+and `examples/study-button.html` for the drop-in snippet.
+
 ## Settings the user owns
 
 ```

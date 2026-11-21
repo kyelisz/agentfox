@@ -11,6 +11,7 @@
  * random site cannot drive your browser even though it can reach this port.
  */
 const http = require('http');
+const study = require('./study');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -246,7 +247,9 @@ function readBody(req, limit = 32 * 1024 * 1024) {
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || '');
-  if (origin.startsWith('moz-extension://')) {
+  // extensions, local pages (file:// sends "null") and loopback dev servers may
+  // read responses; the /study route itself still rejects real web origins.
+  if (origin.startsWith('moz-extension://') || origin === 'null' || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
     res.setHeader('access-control-allow-origin', origin);
     res.setHeader('access-control-allow-headers', 'content-type, x-bx-token');
     res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
@@ -405,7 +408,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---- chat, agent side ---------------------------------------------------
-  if (!tokenOK) return json(res, 401, { ok: false, error: 'BAD_TOKEN' });
+  // /study is the one route a page is allowed to reach without the token (it is
+  // origin-checked and path-restricted inside the handler).
+  if (!tokenOK && url.pathname !== '/study') return json(res, 401, { ok: false, error: 'BAD_TOKEN' });
 
   if (url.pathname === '/chat/inbox') {
     const peek = url.searchParams.get('peek') === '1';
@@ -442,6 +447,66 @@ const server = http.createServer(async (req, res) => {
     if (!String(body.text || '').trim()) return json(res, 400, { error: 'EMPTY' });
     const rec = pushAgentMessage(body.tab === 'all' ? 'all' : (body.tab || chat.users.slice(-1)[0] && chat.users.slice(-1)[0].tab || 0), body.text, body.thread);
     return json(res, 200, { ok: true, id: rec.id, tab: rec.tab, thread: rec.thread, deliveredTo: chat.agents.length });
+  }
+
+  // ---- "study this run": the page asks, the bridge writes a folder of notes --
+  // Deliberately reachable without the token, because a page on file:// cannot
+  // know it. Guard rails instead: loopback caller, no http(s) origin, absolute
+  // path under $HOME, small body, fixed note names.
+  if (url.pathname === '/study') {
+    const origin = String(req.headers.origin || 'null');
+    const remote = String(req.socket.remoteAddress || '');
+    const local = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+    if (!local) return json(res, 403, { error: 'LOOPBACK_ONLY' });
+    const loopbackPage = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
+    if (/^https?:/i.test(origin) && !loopbackPage) {
+      // a real web page must never be able to write files here
+      log('study rejected: origin', origin);
+      return json(res, 403, { error: 'NOT_A_LOCAL_PAGE' });
+    }
+    res.setHeader('access-control-allow-origin', origin === 'null' ? 'null' : '*');
+    res.setHeader('access-control-allow-headers', 'content-type');
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    if (req.method !== 'POST') return json(res, 405, { error: 'METHOD' });
+
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'BAD_JSON' }); }
+    if (JSON.stringify(body).length > 256 * 1024) return json(res, 413, { error: 'TOO_BIG' });
+
+    const gameName = body.game || (body.snapshot && body.snapshot.game) || 'game';
+    const dir = study.safeDir(body.dir) || study.guessDir(gameName);
+    if (!dir) return json(res, 400, { error: 'BAD_DIR', hint: 'send the project folder, or have it under ~/games/<game>' });
+
+    const started = Date.now();
+    const notes = study.buildNotes(body.snapshot || {}, { game: gameName });
+    const out = study.writeNotes(dir, notes);
+
+    // keep the raw snapshot next to the notes and in the bridge's own log
+    try {
+      fs.mkdirSync(path.join(RUN, 'study'), { recursive: true });
+      fs.writeFileSync(path.join(out.dir, 'snapshot.json'), JSON.stringify({
+        game: body.game || null, when: new Date().toISOString(), snapshot: body.snapshot || {},
+      }, null, 2));
+      fs.appendFileSync(path.join(RUN, 'study', 'index.jsonl'), JSON.stringify({
+        when: new Date().toISOString(), game: body.game || null, dir, notes: out.written.map((w) => w.name),
+      }) + '\n');
+    } catch {}
+
+    // the agent sees it on its next turn, so it can add its own deeper note
+    pushUserMessage(null, 'study', body.game || 'game',
+      `[study] something opened in the browser asked for a deeper look. Notes written to ${out.dir} ` +
+      `(${out.written.length} files). Add one short note of your own only if you see something the notes missed.`,
+      'main');
+
+    log('study', `${gameName} -> ${out.dir} (${out.written.length} notes, ${Date.now() - started}ms)`);
+    return json(res, 200, { ok: true, dir: out.dir, notes: out.written, tookMs: Date.now() - started });
+  }
+
+  if (url.pathname === '/study/list' && tokenOK) {
+    const file = path.join(RUN, 'study', 'index.jsonl');
+    let rows = [];
+    try { rows = fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch {}
+    return json(res, 200, { ok: true, runs: rows.slice(-20).reverse() });
   }
 
   if (url.pathname === '/api' && req.method === 'POST') {

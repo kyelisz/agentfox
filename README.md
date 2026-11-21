@@ -20,6 +20,7 @@ from an add-on store.
 | **A chat box in the page** | docked panel with `⤢` maximize, `＋ New` chat, `History` to continue an old conversation, and per-tab docking |
 | **It answers by itself** | an optional second free-pi session in tmux answers from the box in ~5–12s |
 | **Survives restarts** | the launcher re-installs the add-on over Firefox's remote debugger in ~7s at every start |
+| **A "study this" button** | one click in your page: the agent looks at the live state for a few seconds, then writes a folder of small `.txt` notes — best moves, what to delete, where to search ([docs](docs/STUDY-BUTTON.md)) |
 | **Two safety switches** | "ask before starting anything on localhost" and "always on" |
 
 ## Requirements
@@ -80,6 +81,7 @@ bx goto URL · open URL · back · forward · reload
 bx panel on|off|toggle        the chat box
 bx inbox · watch · say "…"     the mailbox, from the terminal side
 bx threads                     conversations behind the History button
+bx notes                       note folders written by the 🧠 button
 bx settings [set alwaysOn on]  the two switches
 bx chatagent on|off|status      the self-answering session
 bx up · down · logs · doctor   the local bridge

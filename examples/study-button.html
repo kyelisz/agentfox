@@ -1,0 +1,199 @@
+<!--
+  study-button.html — drop-in "🧠 Study this" button for any local project.
+
+  Copy the three blocks below into your page:
+    1. the CSS in <style>
+    2. the button + panel markup
+    3. the script, with your own snapshot() function
+
+  What happens when it is clicked:
+    - the button shows five staged steps over ~6 seconds (it really does take a
+      moment — that is the "look at it properly" part)
+    - the page POSTs a snapshot of the current state to the local bridge
+    - the bridge writes a folder of small .txt notes next to your project
+      (notes/01-best-moves.txt, 02-what-to-delete.txt, 03-where-to-search.txt …)
+    - the panel lists what was written, each line a link that opens the file
+
+  Needs: the bridge running (`bx up`) and the project folder either opened from
+  file:// (the folder is derived from location) or living at ~/games/<slug>.
+  Over http:// pass ?notes=/absolute/project/path, or let the bridge guess.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>study button example</title>
+<style>
+/* ---- 1. styles ------------------------------------------------------- */
+#study-btn {
+  position: fixed; top: 14px; right: 14px; z-index: 20;
+  padding: 9px 14px; border-radius: 999px; cursor: pointer;
+  font: 600 12px/1 ui-monospace, monospace; letter-spacing: .06em;
+  color: #f3e6c4; background: rgba(255,253,248,.94);
+  border: 1px solid #d9c08a;
+  box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  transition: box-shadow .15s, transform .1s;
+}
+#study-btn:hover { box-shadow: 0 8px 26px rgba(201,162,39,.28); }
+#study-btn:active { transform: translateY(1px); }
+#study-btn[disabled] { opacity: .6; cursor: progress; }
+
+#study-panel {
+  position: fixed; z-index: 30; left: 50%; top: 50%;
+  transform: translate(-50%, -46%) scale(.97);
+  width: min(430px, 92vw); max-height: 80vh; overflow: auto;
+  padding: 18px 20px 16px; border-radius: 16px;
+  background: #fffdf8; border: 1px solid #e0c483;
+  box-shadow: 0 24px 70px rgba(60,45,10,.18);
+  color: #3a3325; font: 13px/1.5 ui-monospace, monospace;
+  opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+}
+#study-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+#study-panel h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #8a6d1f; }
+#study-panel .sub { color: #8b8272; font-size: 11.5px; margin-bottom: 14px; }
+#study-panel ol { margin: 0; padding: 0; list-style: none; }
+#study-panel li { padding: 3px 0 3px 20px; position: relative; color: #a29780; }
+#study-panel li::before { content: '·'; position: absolute; left: 7px; }
+#study-panel li.done { color: #4a4232; }
+#study-panel li.done::before { content: '✓'; color: #2f8f5b; }
+#study-panel li.now { color: #1f1a12; font-weight: 600; }
+#study-panel .files { margin-top: 12px; border-top: 1px solid #eee2c8; padding-top: 10px; }
+#study-panel .files a { display: block; color: #8a6d1f; text-decoration: none; padding: 2px 0; font-size: 12px; }
+#study-panel .files a:hover { text-decoration: underline; }
+#study-panel .err { color: #a33; }
+#study-panel .close {
+  position: absolute; top: 10px; right: 12px; cursor: pointer; border: 0; background: none;
+  color: #a29780; font-size: 16px; line-height: 1; padding: 4px;
+}
+</style>
+</head>
+<body>
+
+<!-- ---- 2. markup ------------------------------------------------------ -->
+<button id="study-btn" title="take a longer look and write notes">🧠 Study this</button>
+
+<div id="study-panel" role="dialog" aria-label="studying">
+  <button class="close" id="study-close" aria-label="close">×</button>
+  <h2 id="study-title">studying</h2>
+  <div class="sub" id="study-sub">this takes a few seconds — longer than a normal glance</div>
+  <ol id="study-steps"></ol>
+  <div class="files" id="study-files"></div>
+</div>
+
+<h1>your app here</h1>
+<p>Replace <code>snapshot()</code> with whatever state your project has.</p>
+
+<script>
+/* ---- 3. behaviour ---------------------------------------------------- */
+(function () {
+  'use strict';
+
+  var BRIDGE = 'http://127.0.0.1:8788/study';
+  var GAME = 'my-project';          // becomes the title of the notes
+  var STEPS = ['reading what is on screen', 'mapping what is nearby',
+    'checking what keeps going wrong', 'drafting small notes', 'writing the folder'];
+
+  /* --- your state, in whatever shape helps --- */
+  function snapshot() {
+    return {
+      game: GAME,
+      score: 0,             // any numbers you have
+      best: 0,
+      dead: false,
+      deaths: 0,
+      runSeconds: 0,
+      player: { x: 0, y: 0 },    // "where the interesting thing is"
+      platforms: [],             // [{x, y, w, kind}] things to move toward
+    };
+  }
+
+  /* for a chess board, the same contract looks like:
+     return { game: 'chess', score: moveNumber, best: elo,
+              player: { x: from.x, y: from.y },
+              platforms: legal.map(m => ({ x: to.x, y: to.y, w: 1, kind: m.piece })) }
+     The note writer only needs "where am I" and "what can I move toward". */
+
+  function projectDir() {
+    var q = new URLSearchParams(location.search).get('notes');
+    if (q) return q;
+    if (location.protocol !== 'file:') return null;   // bridge falls back to ~/games/<slug>
+    return decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+  }
+
+  var btn = document.getElementById('study-btn');
+  var panel = document.getElementById('study-panel');
+  var stepsEl = document.getElementById('study-steps');
+  var filesEl = document.getElementById('study-files');
+  var titleEl = document.getElementById('study-title');
+  var subEl = document.getElementById('study-sub');
+
+  document.getElementById('study-close').onclick = function () { panel.classList.remove('open'); };
+  window.addEventListener('keydown', function (e) { if (e.key === 'Escape') panel.classList.remove('open'); });
+
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function renderSteps(i) {
+    stepsEl.innerHTML = '';
+    STEPS.forEach(function (label, k) {
+      var li = document.createElement('li');
+      li.textContent = label;
+      if (k < i) li.className = 'done'; else if (k === i) li.className = 'now';
+      stepsEl.appendChild(li);
+    });
+  }
+
+  function animate(i) {
+    if (i >= STEPS.length) return Promise.resolve();
+    renderSteps(i);
+    return wait(1100).then(function () { return animate(i + 1); });
+  }
+
+  btn.addEventListener('click', function () {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    titleEl.textContent = 'studying';
+    subEl.className = 'sub';
+    subEl.textContent = 'this takes a few seconds — longer than a normal glance';
+    filesEl.innerHTML = '';
+    panel.classList.add('open');
+    renderSteps(0);
+
+    var t0 = Date.now();
+    var req = fetch(BRIDGE, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ game: GAME, dir: projectDir(), snapshot: snapshot() })
+    }).then(function (r) { return r.json(); })
+      .catch(function (e) { return { error: 'UNREACHABLE', detail: String(e) }; });
+
+    Promise.all([req, animate(0)])
+      .then(function (both) {
+        var min = 5200 - (Date.now() - t0);       // keep the "took a while" feel
+        return wait(Math.max(0, min)).then(function () { return both[0]; });
+      })
+      .then(function (res) {
+        renderSteps(STEPS.length);
+        btn.disabled = false;
+        if (!res || !res.ok) {
+          titleEl.textContent = 'could not write notes';
+          subEl.className = 'sub err';
+          subEl.textContent = res && res.error === 'UNREACHABLE'
+            ? 'the bridge is not running — start it with "bx up"'
+            : (res && (res.error || res.detail)) || 'unknown error';
+          return;
+        }
+        titleEl.textContent = 'notes written';
+        subEl.textContent = res.notes.length + ' small files · ' + Math.round((Date.now() - t0) / 1000) + 's';
+        res.notes.forEach(function (n) {
+          var a = document.createElement('a');
+          a.href = 'notes/' + n.name;
+          a.target = '_blank';
+          a.textContent = 'notes/' + n.name + '  ·  ' + n.bytes + ' B';
+          filesEl.appendChild(a);
+        });
+      });
+  });
+})();
+</script>
+</body>
+</html>

@@ -75,6 +75,18 @@ newly mounted box. An agent reply without an explicit thread lands in the thread
 of the most recent user message, so an answer can never appear in another
 conversation.
 
+## `/study`: the page as a client
+
+One route on the bridge deliberately works without the token, because a `file://`
+page can never know it: `POST /study { game, dir, snapshot }`. It is safe by
+geometry rather than by secret — loopback caller only, origin must be `null` or a
+loopback dev server (so a website cannot use it), `dir` must be an existing
+absolute folder under `$HOME` with no `..`, body capped at 256 KB, fixed note
+filenames. In return the page gets the list of notes that were written, so the
+button can show real results instead of pretending. The generator
+(`bridge/study.js`) is plain text arithmetic on the snapshot — no model needed —
+and the chat agent gets a message about it so it can add prose.
+
 ## The self-answering session
 
 `bx chatagent on` starts `free-pi-cli` inside `tmux -d -s bxchat`, in `/tmp/bxchat`.
