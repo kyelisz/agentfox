@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>free-pi</title>
+<link rel="stylesheet" href="chat.css">
+<style>
+  /* the panel fills this frame; the page decides how big the frame is */
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: transparent;
+  }
+  #bxchat-host {
+    all: initial;
+    position: static;
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    color-scheme: light;
+  }
+  #bxchat-host * { box-sizing: border-box; }
+  #bxchat-host.bx-max { width: 100%; height: 100%; min-width: 0; }
+</style>
+</head>
+<body>
+<!-- The chat panel lives in its own document on purpose: keys typed here are
+     invisible to the page, so no site can swallow space, arrows, "r" or steal
+     the focus while the user is writing to the agent. -->
+<div id="bxchat-host" data-bxver="5"></div>
+<script src="chat.js"></script>
+</body>
+</html>

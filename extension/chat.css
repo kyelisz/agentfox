@@ -37,9 +37,10 @@
 }
 
 /* maximized: most of the screen, still anchored bottom-right */
+/* the host document (chat-frame.html) is always exactly the frame's size; the
+   page decides how big that is, so no width/height here */
 #bxchat-host.bx-max {
-  width: min(78vw, 980px);
-  height: min(82vh, 760px);
+  min-width: 0;
 }
 
 #bxchat-host .bx-head {
@@ -68,6 +69,8 @@
 }
 
 #bxchat-host .bx-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: .02em;
@@ -327,3 +330,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* narrow frames: the status text shrinks instead of pushing the header around */
+#bxchat-host .bx-head { flex-wrap: nowrap; }
+#bxchat-host .bx-mini {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#bxchat-host .bx-head button { flex: 0 0 auto; }

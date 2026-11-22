@@ -1,7 +1,7 @@
 {
   "name": "free-pi-browser-bridge",
-  "version": "1.0.0",
-  "description": "Let a free-pi (or any pi) agent drive your real Firefox — read pages, click, type, log in — plus a small chat box inside the page that talks back.",
+  "version": "1.1.0",
+  "description": "Let a free-pi (or any pi) agent drive your real Firefox \u2014 read pages, click, type, log in \u2014 plus a small chat box inside the page that talks back.",
   "license": "MIT",
   "type": "commonjs",
   "bin": {
@@ -10,12 +10,21 @@
     "bx-watch-firefox": "bin/bx-watch-firefox.mjs",
     "bx-chat-agent": "bin/bx-chat-agent.mjs"
   },
-  "files": ["bin", "bridge", "extension", "docs"],
+  "files": [
+    "bin",
+    "bridge",
+    "extension",
+    "docs"
+  ],
   "scripts": {
     "start": "node bridge/server.js",
     "pack": "node bridge/make-xpi.js",
     "setup": "node bin/bx forever && node bridge/make-xpi.js"
   },
-  "engines": { "node": ">=18" },
-  "dependencies": { "ws": "^8.18.0" }
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }

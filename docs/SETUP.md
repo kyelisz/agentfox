@@ -9,15 +9,17 @@ Two minutes on Linux/macOS, three on Windows. Nothing here needs `sudo`.
 | | why |
 |---|---|
 | **Firefox**, any recent version | Developer Edition / Nightly are *not* required |
-| **Node.js 18+** | runs the bridge, the CLI and the launcher |
+| **Node.js 22+** | runs the bridge, the CLI and the launcher |
+| **free-pi** (`npm install -g free-pi-cli@latest`) | the agent; it is what answers the chat box |
 | **tmux** *(optional)* | only for `bx chatagent`, the session that answers the chat box by itself |
 | **git** | to clone the repo (you can also download a zip) |
 
 Check quickly:
 
 ```bash
-node -v        # v18 or higher
-tmux -V        # optional
+node -v                    # v22 or higher
+free-pi --version          # if this fails: npm install -g free-pi-cli@latest
+tmux -V                    # optional, only for bx chatagent
 ```
 
 ---
@@ -32,7 +34,7 @@ cd free-pi-browser-bridge
 
 What the script does, in order:
 
-1. checks Node and finds your Firefox + profile
+1. checks Node 22, free-pi and your Firefox + profile
 2. `npm install` (one dependency: `ws`)
 3. writes three prefs into `<profile>/user.js` — this is what lets Firefox open
    its debugger port at startup

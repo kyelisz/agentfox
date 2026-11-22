@@ -363,7 +363,10 @@ function pageExec(p) {
     }
 
     case 'chat': {
-      const CHAT_VER = '3';   // bump when the widget changes: old copies get rebuilt
+      // The panel is an iframe on moz-extension://, not page DOM: keys typed in
+      // it never reach the page (games bind space, arrows, letters and steal
+      // focus), and the page's CSS cannot reach it either.
+      const CHAT_VER = '5';
       const stale = D.getElementById('bxchat-host');
       if (stale && stale.dataset.bxver === CHAT_VER) return res({ mounted: true, already: true });
       if (stale) { try { stale.remove(); } catch (e) {} }
@@ -371,244 +374,68 @@ function pageExec(p) {
       const host = D.createElement('div');
       host.id = 'bxchat-host';
       host.dataset.bxver = CHAT_VER;
-      host.innerHTML = `
-        <div class="bx-box">
-          <div class="bx-head">
-            <span class="bx-dot"></span>
-            <span class="bx-title">free-pi</span>
-            <span class="bx-mini">connecting…</span>
-            <button class="bx-max" title="maximize / restore">⤢</button>
-            <button class="bx-newc" title="start a new chat">＋ New</button>
-            <button class="bx-hist" title="past chats">History</button>
-            <button class="bx-connect" title="connect to the local bridge">Connect</button>
-            <span class="bx-x" title="hide (Alt+Shift+B)">×</span>
-          </div>
-          <div class="bx-log"></div>
-          <div class="bx-foot">
-            <textarea rows="1" placeholder="type to the agent…"></textarea>
-            <button class="bx-send" disabled>Send</button>
-          </div>
-          <div class="bx-hint">Enter sends · Shift+Enter newline · ⤢ maximize · ＋ New chat · History to continue an old one</div>
-          <div class="bx-history" hidden>
-            <div class="bx-history-head"><span>past chats</span><button class="bx-history-close">close</button></div>
-            <div class="bx-history-list"></div>
-          </div>
-        </div>`;
+      host.style.cssText = [
+        'position:fixed', 'right:16px', 'bottom:16px',
+        'width:330px', 'height:430px', 'z-index:2147483647',
+        'margin:0', 'padding:0', 'border:0', 'background:transparent',
+        'display:block', 'pointer-events:auto',
+        'filter:drop-shadow(0 12px 34px rgba(30,20,0,.28))',
+      ].join(';') + ';';
+
+      const frame = D.createElement('iframe');
+      frame.src = browser.runtime.getURL('chat-frame.html');
+      frame.setAttribute('allowtransparency', 'true');
+      frame.setAttribute('title', 'free-pi chat');
+      frame.style.cssText = 'width:100%;height:100%;border:0;margin:0;padding:0;background:transparent;color-scheme:light;display:block;';
+      host.appendChild(frame);
       D.documentElement.appendChild(host);
 
-      const log = host.querySelector('.bx-log');
-      const input = host.querySelector('textarea');
-      const sendBtn = host.querySelector('.bx-send');
-      const dot = host.querySelector('.bx-dot');
-      const mini = host.querySelector('.bx-mini');
-      const connectBtn = host.querySelector('.bx-connect');
-      const histPanel = host.querySelector('.bx-history');
-      const histList = host.querySelector('.bx-history-list');
-
-      let since = 0;
-      let thread = null;
-      let alive = true;
-      let backoff = 2000;
-      let timer = null;
-
-      const add = (cls, text) => {
-        const el = D.createElement('div');
-        el.className = 'bx-msg ' + cls;
-        el.textContent = text;
-        log.appendChild(el);
-        log.scrollTop = log.scrollHeight;
-        while (log.children.length > 300) log.removeChild(log.firstChild);
+      const W = D.defaultView || window;
+      const sizeFor = (max) => max
+        ? { w: Math.min(Math.round(W.innerWidth * 0.78), 980), h: Math.min(Math.round(W.innerHeight * 0.82), 760) }
+        : { w: 330, h: 430 };
+      const applySize = (max) => {
+        const s = sizeFor(max);
+        host.style.width = s.w + 'px';
+        host.style.height = s.h + 'px';
       };
 
-      const setOnline = (on, note) => {
-        dot.className = 'bx-dot' + (on ? ' on' : '');
-        mini.textContent = on ? (thread ? 'chat ' + thread.slice(-4) : 'connected') : (note || 'offline');
-        connectBtn.textContent = on ? 'Reconnect' : 'Connect';
-        connectBtn.className = 'bx-connect' + (on ? ' soft' : '');
-      };
-
-      /* ---- threads: the transcript lives on the bridge, not in this tab ---- */
-      const seed = async (t) => {
-        thread = t || thread;
-        const r = await browser.runtime.sendMessage({ type: 'chat-history', thread });
-        log.textContent = '';
-        since = 0;
-        if (r && r.ok) {
-          for (const m of r.messages || []) {
-            add(m.from === 'user' ? 'bx-me' : 'bx-agent', m.text);
-            since = Math.max(since, m.ts || 0);
-          }
-          if (!(r.messages || []).length) add('bx-sys', 'new chat — say something');
+      let maximized = false;
+      const onMsg = (ev) => {
+        // content-script windows are Xray wrappers, so comparing ev.source is
+        // unreliable; accept only the two ops this frame is allowed to ask for.
+        const d = ev.data && ev.data.bx;                 // frame sends { bx: { op } }
+        if (!d || typeof d !== 'object') return;
+        if (d.op !== 'chat-close' && d.op !== 'chat-max') return;
+        if (d.op === 'chat-max') {
+          maximized = !!d.on;
+          applySize(maximized);
+          try { browser.runtime.sendMessage({ type: 'chat-pref-set', chatMax: maximized }); } catch (e) {}
+        }
+        if (d.op === 'chat-close') {
+          try { browser.runtime.sendMessage({ type: 'chat-hide-tab' }); } catch (e) {}
+          remove();
         }
       };
-
-      const loadCurrent = async () => {
-        const r = await browser.runtime.sendMessage({ type: 'chat-threads' });
-        if (r && r.ok) {
-          thread = r.current || 'main';
-          await seed(thread);
-          setOnline(true);
-        }
+      const onResize = () => { if (maximized) applySize(true); };
+      const remove = () => {
+        try { W.removeEventListener('message', onMsg); } catch (e) {}
+        try { W.removeEventListener('resize', onResize); } catch (e) {}
+        try { host.remove(); } catch (e) {}
       };
+      W.addEventListener('message', onMsg);
+      W.addEventListener('resize', onResize);
 
-      connectBtn.addEventListener('click', async () => {
-        setOnline(false, 'connecting…');
-        connectBtn.disabled = true;
-        try {
-          const r = await browser.runtime.sendMessage({ type: 'chat-reconnect' });
-          if (r && r.bridge) {
-            setOnline(true);
-            add('bx-sys', r.extension ? 'reconnected to the bridge' : 'bridge is up but no agent is listening yet');
-            await loadCurrent();
-          } else {
-            setOnline(false, 'no bridge');
-            add('bx-sys', 'no bridge on 127.0.0.1:8788 — run `bx up` in the terminal, then press Connect');
-          }
-        } catch (e) {
-          setOnline(false, 'extension reloaded');
-          add('bx-sys', 'the add-on was reloaded — reopen this box (Alt+Shift+B)');
-        }
-        connectBtn.disabled = false;
-        backoff = 2000;
-        poll();
+      frame.addEventListener('load', () => {
+        try { frame.contentWindow.postMessage({ bxFocus: true }, '*'); } catch (e) {}
       });
-
-      /* ---- maximize ---- */
-      const applyMax = (on) => {
-        host.classList.toggle('bx-max', !!on);
-        host.querySelector('.bx-max').textContent = on ? '⤡' : '⤢';
-        log.scrollTop = log.scrollHeight;
-      };
-      host.querySelector('.bx-max').addEventListener('click', async () => {
-        const on = !host.classList.contains('bx-max');
-        applyMax(on);
-        try { await browser.runtime.sendMessage({ type: 'chat-pref-set', chatMax: on }); } catch (e) {}
-      });
-
-      /* ---- new chat ---- */
-      host.querySelector('.bx-newc').addEventListener('click', async () => {
-        const btn = host.querySelector('.bx-newc');
-        btn.disabled = true;
-        const r = await browser.runtime.sendMessage({ type: 'chat-new' }).catch(() => null);
-        btn.disabled = false;
-        if (r && r.ok) {
-          thread = r.thread;
-          log.textContent = '';
-          since = 0;
-          add('bx-sys', 'new chat started — everything below is a fresh conversation');
-          setOnline(true);
-        } else {
-          add('bx-sys', 'could not start a new chat — is the bridge running? (bx up)');
-        }
-        input.focus();
-      });
-
-      /* ---- history ---- */
-      const renderHistory = async () => {
-        histList.textContent = '';
-        const r = await browser.runtime.sendMessage({ type: 'chat-threads' }).catch(() => null);
-        if (!r || !r.ok) {
-          histList.textContent = '';
-          add('bx-sys', 'could not load chats — is the bridge running?');
-          return;
-        }
-        for (const t of r.threads || []) {
-          const btn = D.createElement('button');
-          btn.className = 'bx-thread' + (t.id === thread ? ' current' : '');
-          const title = D.createElement('span');
-          title.className = 'bx-thread-title';
-          title.textContent = t.title || '(untitled chat)';
-          const meta = D.createElement('span');
-          meta.className = 'bx-thread-meta';
-          const when = new Date(t.lastTs || Date.now());
-          meta.textContent = `${t.count} messages · ${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-          btn.appendChild(title);
-          btn.appendChild(meta);
-          btn.addEventListener('click', async () => {
-            const s = await browser.runtime.sendMessage({ type: 'chat-select', thread: t.id }).catch(() => null);
-            if (s && s.ok) {
-              histPanel.hidden = true;
-              await seed(s.thread);
-              setOnline(true);
-              poll();
-            }
-          });
-          histList.appendChild(btn);
-        }
-        if (!(r.threads || []).length) histList.textContent = 'no chats yet';
-      };
-      host.querySelector('.bx-hist').addEventListener('click', async () => {
-        histPanel.hidden = false;
-        await renderHistory();
-      });
-      host.querySelector('.bx-history-close').addEventListener('click', () => { histPanel.hidden = true; });
-
-      /* ---- send ---- */
-      const send = async () => {
-        const text = input.value.trim();
-        if (!text || !alive) return;
-        add('bx-me', text);
-        input.value = '';
-        input.style.height = 'auto';
-        sendBtn.disabled = true;
-        try {
-          const r = await browser.runtime.sendMessage({ type: 'chat-send', text, thread });
-          if (!r || !r.ok) {
-            add('bx-sys', 'not delivered — is the bridge running? (bx up)');
-          } else {
-            setOnline(true);
-            add('bx-sys', 'queued — the agent reads this on its next turn');
-          }
-        } catch (e) {
-          add('bx-sys', 'not delivered: ' + ((e && e.message) || e));
-        }
-      };
-
-      /* ---- polling ---- */
-      const poll = async () => {
-        if (!alive) return;
-        clearTimeout(timer);
-        try {
-          const r = await browser.runtime.sendMessage({ type: 'chat-poll', since, thread });
-          if (!r) throw new Error('no answer from the extension');
-          setOnline(!!r.connected, r.connected ? '' : 'agent offline');
-          for (const m of r.replies || []) {
-            add('bx-agent', m.text);
-            since = Math.max(since, m.ts);
-          }
-          if (backoff !== 2000) backoff = 2000;
-          timer = setTimeout(poll, 2000);
-        } catch (e) {
-          setOnline(false, 'no bridge');
-          backoff = Math.min(backoff * 2, 15000);
-          timer = setTimeout(poll, backoff);
-        }
-      };
-
-      const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 92) + 'px'; };
-
-      input.addEventListener('input', () => { grow(); sendBtn.disabled = !input.value.trim(); });
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); send(); }
-        if (ev.key === 'Escape') { if (!histPanel.hidden) histPanel.hidden = true; else input.blur(); }
-      });
-      sendBtn.addEventListener('click', send);
-      host.querySelector('.bx-x').addEventListener('click', () => {
-        alive = false;
-        clearTimeout(timer);
-        host.remove();
-      });
-
       (async () => {
         try {
-          const p = await browser.runtime.sendMessage({ type: 'chat-pref-get' });
-          if (p && p.ok && p.chatMax) applyMax(true);
+          const p2 = await browser.runtime.sendMessage({ type: 'chat-pref-get' });
+          if (p2 && p2.ok && p2.chatMax) { maximized = true; applySize(true); }
         } catch (e) {}
-        await loadCurrent();
-        poll();
       })();
-      setTimeout(() => { try { input.focus(); } catch (e) {} }, 60);
-      return res({ mounted: true });
+      return res({ mounted: true, frame: true });
     }
 
     case 'chat-close': {

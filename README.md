@@ -2,36 +2,38 @@
 
 Drive **your real Firefox** from a terminal agent — read pages, click, type, log in,
 switch tabs — and give the page a small **white-and-gold chat box** that talks back
-to the agent without leaving the browser.
+to the agent from inside the browser.
 
 No cloud, no Playwright, no second browser profile. Everything stays on
-`127.0.0.1`, and the extension is yours: a local folder you load, not something
-from an add-on store.
+`127.0.0.1`, and the add-on is yours: a local folder you load, not something from
+a store.
 
 <p align="center">
   <img src="docs/images/widget.png" alt="the chat box" width="620">
 </p>
 
-## What you get
+---
 
-| | |
-|---|---|
-| **Browse for the agent** | `bx read`, `bx find`, `bx click`, `bx type`, `bx press`, `bx scroll`, `bx shot`, `bx eval`, `bx wait`, across every window and tab |
-| **A chat box in the page** | docked panel with `⤢` maximize, `＋ New` chat, `History` to continue an old conversation, and per-tab docking |
-| **It answers by itself** | an optional second free-pi session in tmux answers from the box in ~5–12s |
-| **Survives restarts** | the launcher re-installs the add-on over Firefox's remote debugger in ~7s at every start |
-| **A "study this" button** | one click in your page: the agent looks at the live state for a few seconds, then writes a folder of small `.txt` notes — best moves, what to delete, where to search ([docs](docs/STUDY-BUTTON.md)) |
-| **Two safety switches** | "ask before starting anything on localhost" and "always on" |
+## Install (3 steps, ~2 minutes)
 
-## Requirements
+### Step 1 — Node 22
 
-- **Firefox** (any recent version; Developer Edition or Nightly not needed)
-- **Node.js 18+**
-- `tmux` (only for the auto-answering chat session) — Linux/macOS/WSL
+```bash
+node -v          # must print v22.x or newer
+```
+No Node? Install it from **https://nodejs.org** (or `nvm install 22`).
 
-## Install
+### Step 2 — free-pi
 
-### Linux / macOS
+```bash
+npm install -g free-pi-cli@latest
+free-pi --version
+```
+free-pi is the agent. Without it the browser side still works and the chat box
+still collects your messages — there is just nothing to answer them. (If you
+only ever run free-pi through `npx free-pi-cli@latest`, that is fine too.)
+
+### Step 3 — this repo
 
 ```bash
 git clone https://github.com/kyelisz/free-pi-browser-bridge
@@ -39,38 +41,48 @@ cd free-pi-browser-bridge
 ./install.sh
 ```
 
-### Windows
+**Windows:** run `install.bat` instead of `./install.sh` (same thing).
 
-```bat
-git clone https://github.com/kyelisz/free-pi-browser-bridge
-cd free-pi-browser-bridge
-install.bat
-```
+The script checks Node 22, free-pi and Firefox, installs one dependency, builds
+the add-on, puts `bx` on your PATH, starts the bridge and (on Linux) points your
+Firefox icon at the launcher.
 
-Then **quit Firefox and start it again from the normal Firefox icon** (on Linux the
-installer points that icon at the launcher). The add-on installs itself a few
-seconds into startup.
+### Step 4 — restart Firefox the right way
 
-Verify from a terminal:
+**Quit Firefox completely, then open it from its normal Firefox icon.** Nothing
+appears for ~10 seconds; that is the add-on installing itself.
+
+Then:
 
 ```bash
 bx status          # "extension": true
 bx read            # the text of the page in front of you
-bx panel on        # put the chat box on this tab
+bx panel on        # the chat box, bottom right
+bx chatagent on    # optional: let it answer the box by itself
 ```
 
-Full walkthrough, including the one-off manual route: **[docs/SETUP.md](docs/SETUP.md)**.
+Stuck? `bx doctor` names the broken link and the fix. Full walkthrough:
+**[docs/SETUP.md](docs/SETUP.md)** · **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**
 
-## The chat box
+---
 
-Type in it, press Enter. The message is queued on the bridge; the agent answers
-either when you next write in the terminal, or — if you turned on the helper
-session — within seconds, on its own:
+## What you get
 
-```
-bx chatagent on     # an extra free-pi session that only answers the box
-bx chatagent off
-```
+| | |
+|---|---|
+| **Browse for the agent** | `bx read`, `bx find`, `bx click`, `bx type`, `bx press`, `bx scroll`, `bx shot`, `bx eval`, `bx wait` — across every window and tab |
+| **A chat box in the page** | white/gold panel with `⤢` maximize, `＋ New` chat, `History` to continue an old conversation, per-tab docking |
+| **It answers by itself** | an optional second free-pi session in tmux answers from the box in ~5–12 s |
+| **A "study this" button** | one click in your page: the agent looks at the live state for a few seconds, then writes a folder of small `.txt` notes — best moves, what to delete, where to search ([docs](docs/STUDY-BUTTON.md)) |
+| **Survives restarts** | the launcher re-installs the add-on over Firefox's remote debugger at every start |
+| **Two safety switches** | "ask before starting anything on localhost" and "always on" |
+
+### The chat box is isolated on purpose
+
+The panel runs in its own `moz-extension://` iframe, not in the page's DOM. So
+sites and games that bind space, arrows or letters — or that grab focus — cannot
+eat what you type, and the page's CSS cannot reach the panel. Verified against a
+page with a capture-phase `preventDefault()` on every key.
 
 ## Command cheat sheet
 
@@ -78,14 +90,13 @@ bx chatagent off
 bx status · tabs · read [--full] · find "text" · click "text" · type "hi" [--into CSS]
 bx keys · press · select · check · scroll · shot · eval · wait · raw · options
 bx goto URL · open URL · back · forward · reload
-bx panel on|off|toggle        the chat box
-bx inbox · watch · say "…"     the mailbox, from the terminal side
-bx threads                     conversations behind the History button
-bx notes                       note folders written by the 🧠 button
-bx settings [set alwaysOn on]  the two switches
+bx panel on|off|toggle          the chat box
+bx inbox · watch · say "…"      the mailbox, from the terminal side
+bx threads · bx notes           past chats · note folders the 🧠 button wrote
+bx settings [set alwaysOn on]   the two switches
 bx chatagent on|off|status      the self-answering session
-bx up · down · logs · doctor   the local bridge
-bx forever · setup · pack      installation helpers
+bx up · down · logs · doctor    the local bridge
+bx forever · setup · pack       installation helpers
 ```
 
 Everything, with flags: **[docs/USAGE.md](docs/USAGE.md)**.
@@ -93,23 +104,32 @@ Everything, with flags: **[docs/USAGE.md](docs/USAGE.md)**.
 ## How it works (short)
 
 ```
-pi / free-pi agent ── bx CLI ──HTTP──▶ bridge (127.0.0.1:8788) ──long-poll──▶ Firefox extension ──▶ page
+pi / free-pi agent ── bx CLI ──HTTP──▶ bridge (127.0.0.1:8788) ──long-poll──▶ Firefox extension ──▶ tab
                                               ▲
-                                    chat box in the page
+                                    chat box in its own iframe
 ```
 
-The extension polls the bridge, runs the command against the tab (isolated world,
-so page CSP can't block it), and posts the result back. A temporary loopback token
-pairing means a random web page cannot drive your browser. Details:
+The extension polls the bridge, runs the command against the tab in an isolated
+world (so page CSP cannot block it), and posts the result back. A random loopback
+token means no web page can drive your browser. Details:
 **[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)**.
 
-## Why the add-on has to be re-installed
+## Requirements
+
+| | |
+|---|---|
+| **Node 22+** | hard requirement |
+| **free-pi** | `npm install -g free-pi-cli@latest` — answers the chat box |
+| **Firefox** | any recent version; Developer/Nightly not needed |
+| **tmux** *(optional)* | only for `bx chatagent`, the session that answers the box |
+
+## Why the add-on is re-installed at every start
 
 Release Firefox refuses unsigned add-ons, and a temporary add-on disappears when
 the browser closes. So `bx-firefox` starts Firefox with `-start-debugger-server`
 and installs `dist/firefox-bridge.xpi` over the Remote Debugging Protocol before
-you can even see the window. That is what `install.sh` wires into your Firefox
-icon, and what `bx-watch-firefox` repairs if Firefox was started some other way.
+the window is usable. `install.sh` wires that into your Firefox icon, and
+`bx-watch-firefox` repairs it if Firefox was started some other way.
 
 ## Security
 
