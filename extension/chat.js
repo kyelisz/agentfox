@@ -51,6 +51,17 @@
   const connectBtn = HOST.querySelector('.bx-connect');
   const histPanel = HOST.querySelector('.bx-history');
   const histList = HOST.querySelector('.bx-history-list');
+  const footEl = HOST.querySelector('.bx-foot');
+  // where the input row begins, measured from the bottom of the frame: the page
+  // puts its loading line exactly there
+  const reportFoot = () => {
+    if (!footEl) return;
+    const top = footEl.getBoundingClientRect().top;
+    parentMsg({ op: 'foot', bottom: Math.round(window.innerHeight - top) });
+  };
+  setTimeout(reportFoot, 60);
+  setTimeout(reportFoot, 400);
+  try { new ResizeObserver(reportFoot).observe(footEl); } catch (e) {}
 
   let since = 0;
   let thread = null;
@@ -60,6 +71,7 @@
   let thinkTimer = null;
   let thinkStart = 0;
   let showThinking = true;
+  let loadingStyle = 'line';
 
   const add = (cls, text) => {
     const el = D.createElement('div');
@@ -197,9 +209,10 @@
     if (!showThinking) return;
     thinkStart = Date.now();
     dot.className = 'bx-dot on busy';
-    parentMsg({ op: 'busy', on: true });        // the page draws the hairline
+    parentMsg({ op: 'busy', on: true });        // the page draws the ring, if chosen
     clearInterval(thinkTimer);
-    thinkTimer = setInterval(thinkTick, 1500);
+    setTimeout(thinkTick, 700);
+    thinkTimer = setInterval(thinkTick, 1200);
   };
 
   const stopThinking = () => {
@@ -209,12 +222,13 @@
     parentMsg({ op: 'busy', on: false });
   };
 
-  // the line is the feedback; this only decides when it should disappear
+  // the line is the feedback; this only asks "has everything been answered yet?"
   const thinkTick = async () => {
-    if (Date.now() - thinkStart > 240000) { stopThinking(); return; }
+    const age = Date.now() - thinkStart;
+    if (age > 240000) { stopThinking(); return; }
     let p = null;
     try { p = await browser.runtime.sendMessage({ type: 'chat-pending', thread }); } catch (e) {}
-    if (p && p.ok && p.pending === 0 && Date.now() - thinkStart > 1500) stopThinking();
+    if (p && p.ok && p.pending === 0 && age > 1200) stopThinking();
   };
 
   /* ---- send ---- */
@@ -251,7 +265,7 @@
         add('bx-agent', m.text);
         since = Math.max(since, m.ts);
       }
-      if ((r.replies || []).length) stopThinking();
+
       if (backoff !== 2000) backoff = 2000;
       timer = setTimeout(poll, 2000);
     } catch (e) {
@@ -281,7 +295,8 @@
       if (p && p.ok) {
         showThinking = p.showThinking !== false;
         parentMsg({ op: 'dock-side', side: p.dockSide === 'left' ? 'left' : 'right' });
-        parentMsg({ op: 'loading-style', style: p.loadingStyle === 'ring' ? 'ring' : 'line' });
+        loadingStyle = p.loadingStyle === 'ring' ? 'ring' : 'line';
+        parentMsg({ op: 'loading-style', style: loadingStyle });
       }
       if (p && p.ok && p.chatMax) {
         HOST.classList.add('bx-max');

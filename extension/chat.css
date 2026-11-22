@@ -342,6 +342,26 @@
 }
 #bxchat-host .bx-head button { flex: 0 0 auto; }
 
+/* the loading line, on the rule directly above the input row: a flex item
+   between the log and the foot, so it lands there at any panel size */
+#bxchat-host .bx-loadbar {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(180deg, #efe0bd, #f6ecd3);
+  overflow: hidden;
+}
+#bxchat-host .bx-loadbar[hidden] { display: none; }
+#bxchat-host .bx-loadbar > i {
+  display: block;
+  height: 100%;
+  width: 28%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(170,130,20,0), #a8801a 30%, #8f6a10 50%, #b8931f 70%, rgba(170,130,20,0));
+  box-shadow: 0 0 7px rgba(201,162,39,.8);
+}
+
 /* the status dot breathes while an answer is in flight; the bar itself is
    drawn by page.js on the panel wrapper (outside this frame) */
 #bxchat-host .bx-dot.busy { animation: bx-pulse 1.1s ease-in-out infinite; }

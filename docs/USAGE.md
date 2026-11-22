@@ -67,12 +67,14 @@ no spinner, no sentence:
 
 | `loadingStyle` | what you see |
 | --- | --- |
-| `line` (default) | a 3px gold bar sweeping along the rule right above the text box |
-| `ring` | a gold arc travelling around the panel's edge, over all four sides |
+| `line` (default) | a slim rounded pale track just above the input, with a darker gold segment sweeping through it |
+| `ring` | a gold comet chasing itself around all four panel edges, one per side on a shared clock |
 
 Both are drawn on the panel wrapper outside the chat iframe (plain divs plus the
 Web Animations API), so a page's CSP, key handlers or timers cannot block or
-freeze them. `showThinking` off means no animation at all.
+freeze them. They start the instant you press Enter and stop when the bridge
+says nothing is waiting for an answer any more — not when the first reply of an
+older message lands. `showThinking` off means no animation at all.
 
 ## Notes the page asked for ("study this")
 

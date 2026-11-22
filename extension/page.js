@@ -159,7 +159,6 @@ function pageExec(p) {
       d.style.cssText = `position:fixed;left:${r.left - 2}px;top:${r.top - 2}px;width:${r.width + 4}px;height:${r.height + 4}px;
         border:2px solid #ff3b6b;border-radius:4px;z-index:2147483647;pointer-events:none;transition:opacity .35s`;
       D.documentElement.appendChild(d);
-      sizeSpin();
       setTimeout(() => { d.style.opacity = '0'; }, 320);
       setTimeout(() => d.remove(), 760);
     } catch (e) {}
@@ -394,74 +393,98 @@ function pageExec(p) {
       // They are plain divs + WAAPI, so page CSP cannot block them.
       const PANEL_BG = '#fffdf8';
 
-      const track = D.createElement('div');            // ---- line ----
+      // ---- line: sits on the rule right above the input row ----
+      // the frame reports where its input row starts, so this lands on that rule
+      // at any panel size (docked or maximized) without guessing.
+      const track = D.createElement('div');
       track.style.cssText = [
-        'position:absolute', 'left:0', 'right:0', 'bottom:0', 'height:3px',
-        'background:#f4e8cb', 'overflow:hidden', 'pointer-events:none',
-        'opacity:0', 'transition:opacity .15s', 'z-index:2',
+        'position:absolute', 'left:10px', 'right:10px', 'bottom:44px', 'height:5px',
+        'border-radius:99px', 'background:#f1e4c2',
+        'box-shadow:inset 0 0 0 1px rgba(201,162,39,.14)',
+        'overflow:hidden', 'pointer-events:none', 'opacity:0',
+        'transition:opacity .12s', 'z-index:5',    // above the iframe, or it hides behind it
       ].join(';') + ';';
       const band = D.createElement('div');
       band.style.cssText = [
-        'position:absolute', 'top:0', 'bottom:0', 'left:0', 'width:64px',
-        'background:linear-gradient(90deg,rgba(201,162,39,0),#c9a227 55%,rgba(201,162,39,0))',
+        'position:absolute', 'top:0', 'bottom:0', 'left:0', 'width:110px',
+        'background:linear-gradient(90deg,#e8ca80 0%,#c9a227 30%,#a8801a 75%,#8f6a10 100%)',
+        'border-radius:99px',
       ].join(';') + ';';
       track.appendChild(band);
       host.appendChild(track);
 
-      const ring = D.createElement('div');             // ---- ring ----
-      ring.style.cssText = [
-        'position:absolute', 'inset:0', 'border-radius:14px', 'overflow:hidden',
-        'pointer-events:none', 'opacity:0', 'transition:opacity .18s',
-        'z-index:3', 'padding:4px',
-        '-webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-        'mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
-        'mask-composite:exclude', '-webkit-mask-composite:xor',
-      ].join(';') + ';';
-      const spin = D.createElement('div');
-      spin.style.cssText = [
-        'position:absolute', 'left:50%', 'top:50%',
-        'filter:drop-shadow(0 0 5px rgba(201,162,39,.75))',
-        'background:conic-gradient(from 0deg,rgba(201,162,39,0) 0deg,' +
-        'rgba(201,162,39,.06) 40deg,#dfc07a 180deg,#c9a227 280deg,' +
-        '#ffefb8 340deg,rgba(201,162,39,0) 360deg)',
-      ].join(';') + ';';
-      ring.appendChild(spin);
-      host.appendChild(ring);
-
       let bandAnim = null;
-      let spinAnim = null;
       if (band.animate) {
         try {
           bandAnim = band.animate(
-            [{ left: '-64px' }, { left: '100%' }],
-            { duration: 1300, iterations: Infinity, easing: 'linear' },
+            [{ transform: 'translateX(-110px)' }, { transform: 'translateX(370px)' }],
+            { duration: 1200, iterations: Infinity, easing: 'linear' },
           );
           bandAnim.pause();
         } catch (e) {}
       }
 
+      // ---- ring: one gold segment chasing itself around the panel's edge ----
+      // Four thin bars (one per side), each carrying a comet gradient, all on the
+      // same clock with staggered delays. No masks, no conic gradients: this paints
+      // everywhere and is cheap.
+      const ring = D.createElement('div');
+      ring.style.cssText = [
+        'position:absolute', 'inset:0', 'border-radius:14px', 'overflow:hidden',
+        'pointer-events:none', 'opacity:0', 'transition:opacity .18s', 'z-index:6',
+      ].join(';') + ';';
+
+      const LAP = 1500;
+      const SEG = 120;
+      const edgeSpecs = [
+        { css: 'left:0;right:0;top:0;height:4px', horizontal: true, reverse: false, delay: 0 },
+        { css: 'top:0;bottom:0;right:0;width:4px', horizontal: false, reverse: false, delay: -LAP / 4 },
+        { css: 'left:0;right:0;bottom:0;height:4px', horizontal: true, reverse: true, delay: -LAP / 2 },
+        { css: 'top:0;bottom:0;left:0;width:4px', horizontal: false, reverse: true, delay: -3 * LAP / 4 },
+      ];
+      const edgeAnims = [];
+      for (const spec of edgeSpecs) {
+        const bar = D.createElement('div');
+        bar.style.cssText = 'position:absolute;overflow:hidden;' +
+          'filter:drop-shadow(0 0 6px rgba(214,175,60,.85));' + spec.css;
+        const seg = D.createElement('div');
+        if (spec.horizontal) {
+          seg.style.cssText = 'position:absolute;top:0;bottom:0;left:0;width:' + SEG + 'px;' +
+            'background:linear-gradient(90deg,rgba(201,162,39,0),#c9a227 40%,#e8ca80 68%,#fff8dc 88%,#fffdf0 100%)';
+        } else {
+          seg.style.cssText = 'position:absolute;left:0;right:0;top:0;height:' + SEG + 'px;' +
+            'background:linear-gradient(180deg,rgba(201,162,39,0),#c9a227 40%,#e8ca80 68%,#fff8dc 88%,#fffdf0 100%)';
+        }
+        bar.appendChild(seg);
+        ring.appendChild(bar);
+        if (seg.animate) {
+          const from = spec.reverse ? '100%' : (-SEG) + 'px';
+          const to = spec.reverse ? (-SEG) + 'px' : '100%';
+          const kf = spec.horizontal ? [{ left: from }, { left: to }] : [{ top: from }, { top: to }];
+          try {
+            const an = seg.animate(kf, {
+              duration: LAP, iterations: Infinity, easing: 'linear', delay: spec.delay,
+            });
+            an.pause();
+            edgeAnims.push(an);
+          } catch (e) {}
+        }
+      }
+      host.appendChild(ring);
+
       let loadingStyle = 'line';
-      let footH = 46;                                  // input row height, from the frame
-      const placeTrack = () => { track.style.bottom = Math.max(0, footH) + 'px'; };
-      placeTrack();
 
       const showLoading = (on) => {
-        const useRing = loadingStyle === 'ring';
-        track.style.opacity = (on && !useRing) ? '1' : '0';
-        ring.style.opacity = (on && useRing) ? '1' : '0';
+        const isLine = loadingStyle === 'line';
+        track.style.opacity = (on && isLine) ? '1' : '0';
         try {
-          if (on && !useRing) bandAnim && bandAnim.play();
-          else bandAnim && bandAnim.pause();
+          if (on && isLine) { if (bandAnim) bandAnim.play(); }
+          else if (bandAnim) bandAnim.pause();
         } catch (e) {}
+        ring.style.opacity = (on && !isLine) ? '1' : '0';
         try {
-          if (on && useRing) {
-            if (!spinAnim && spin.animate) {
-              spinAnim = spin.animate(
-                [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
-                { duration: 1500, iterations: Infinity, easing: 'linear' },
-              );
-            } else if (spinAnim) spinAnim.play();
-          } else if (spinAnim) spinAnim.pause();
+          if (on && !isLine) edgeAnims.forEach((a) => a.play());
+          else edgeAnims.forEach((a) => a.pause());
         } catch (e) {}
       };
 
@@ -472,20 +495,10 @@ function pageExec(p) {
       const sizeFor = (max) => max
         ? { w: Math.min(Math.round(W.innerWidth * 0.78), 980), h: Math.min(Math.round(W.innerHeight * 0.82), 760) }
         : { w: 330, h: 430 };
-      const sizeSpin = () => {
-        const w = host.offsetWidth || 330;
-        const h = host.offsetHeight || 430;
-        const d = Math.round(Math.max(w, h) * 1.7);
-        spin.style.width = d + 'px';
-        spin.style.height = d + 'px';
-        spin.style.marginLeft = (-d / 2) + 'px';
-        spin.style.marginTop = (-d / 2) + 'px';
-      };
       const applySize = (max) => {
         const s = sizeFor(max);
         host.style.width = s.w + 'px';
         host.style.height = s.h + 'px';
-        sizeSpin();
       };
 
       let maximized = false;
@@ -498,6 +511,11 @@ function pageExec(p) {
         if (!['chat-close', 'chat-max', 'dock-side', 'busy', 'foot',
               'loading-style'].includes(d.op)) return;
         if (d.op === 'busy') { showLoading(!!d.on); return; }
+        if (d.op === 'foot') {
+          const b = Number(d.bottom);
+          if (b > 0 && b < 2000) track.style.bottom = (b + 4) + 'px';   // clear of the divider
+          return;
+        }
         if (d.op === 'foot') { footH = Number(d.h) || 0; placeTrack(); return; }
         if (d.op === 'loading-style') {
           loadingStyle = d.style === 'ring' ? 'ring' : 'line';
