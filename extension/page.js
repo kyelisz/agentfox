@@ -159,6 +159,7 @@ function pageExec(p) {
       d.style.cssText = `position:fixed;left:${r.left - 2}px;top:${r.top - 2}px;width:${r.width + 4}px;height:${r.height + 4}px;
         border:2px solid #ff3b6b;border-radius:4px;z-index:2147483647;pointer-events:none;transition:opacity .35s`;
       D.documentElement.appendChild(d);
+      sizeSpin();
       setTimeout(() => { d.style.opacity = '0'; }, 320);
       setTimeout(() => d.remove(), 760);
     } catch (e) {}
@@ -387,33 +388,83 @@ function pageExec(p) {
       frame.setAttribute('allowtransparency', 'true');
       frame.setAttribute('title', 'agentfox chat');
       frame.style.cssText = 'width:100%;height:100%;border:0;margin:0;padding:0;background:transparent;color-scheme:light;display:block;';
-      // the loading hairline lives on the wrapper, not inside the frame: one div,
-      // a repeating gold gradient, moved with a WAAPI animation (no <style>, so
-      // page CSP cannot block it).
-      const track = D.createElement('div');
+      // Two loading styles, both drawn on the wrapper (never inside the frame):
+      //   line  — a 3px bar on the rule right above the input row
+      //   ring  — a gold arc travelling around the panel's edge
+      // They are plain divs + WAAPI, so page CSP cannot block them.
+      const PANEL_BG = '#fffdf8';
+
+      const track = D.createElement('div');            // ---- line ----
       track.style.cssText = [
         'position:absolute', 'left:0', 'right:0', 'bottom:0', 'height:3px',
         'background:#f4e8cb', 'overflow:hidden', 'pointer-events:none',
-        'border-radius:0 0 14px 14px', 'opacity:0', 'transition:opacity .15s',
-        'z-index:2',
+        'opacity:0', 'transition:opacity .15s', 'z-index:2',
       ].join(';') + ';';
       const band = D.createElement('div');
       band.style.cssText = [
-        'position:absolute', 'top:0', 'bottom:0', 'left:0', 'width:60px',
-        'background:linear-gradient(90deg,rgba(232,207,146,0),#c9a227 55%,rgba(232,207,146,0))',
+        'position:absolute', 'top:0', 'bottom:0', 'left:0', 'width:64px',
+        'background:linear-gradient(90deg,rgba(201,162,39,0),#c9a227 55%,rgba(201,162,39,0))',
       ].join(';') + ';';
       track.appendChild(band);
       host.appendChild(track);
 
+      const ring = D.createElement('div');             // ---- ring ----
+      ring.style.cssText = [
+        'position:absolute', 'inset:0', 'border-radius:14px', 'overflow:hidden',
+        'pointer-events:none', 'opacity:0', 'transition:opacity .18s',
+        'z-index:3', 'padding:4px',
+        '-webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+        'mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+        'mask-composite:exclude', '-webkit-mask-composite:xor',
+      ].join(';') + ';';
+      const spin = D.createElement('div');
+      spin.style.cssText = [
+        'position:absolute', 'left:50%', 'top:50%',
+        'filter:drop-shadow(0 0 5px rgba(201,162,39,.75))',
+        'background:conic-gradient(from 0deg,rgba(201,162,39,0) 0deg,' +
+        'rgba(201,162,39,.06) 40deg,#dfc07a 180deg,#c9a227 280deg,' +
+        '#ffefb8 340deg,rgba(201,162,39,0) 360deg)',
+      ].join(';') + ';';
+      ring.appendChild(spin);
+      host.appendChild(ring);
+
       let bandAnim = null;
+      let spinAnim = null;
       if (band.animate) {
         try {
           bandAnim = band.animate(
-            [{ left: '-60px' }, { left: '100%' }],   // follows the panel width, maximized or not
+            [{ left: '-64px' }, { left: '100%' }],
             { duration: 1300, iterations: Infinity, easing: 'linear' },
           );
+          bandAnim.pause();
         } catch (e) {}
       }
+
+      let loadingStyle = 'line';
+      let footH = 46;                                  // input row height, from the frame
+      const placeTrack = () => { track.style.bottom = Math.max(0, footH) + 'px'; };
+      placeTrack();
+
+      const showLoading = (on) => {
+        const useRing = loadingStyle === 'ring';
+        track.style.opacity = (on && !useRing) ? '1' : '0';
+        ring.style.opacity = (on && useRing) ? '1' : '0';
+        try {
+          if (on && !useRing) bandAnim && bandAnim.play();
+          else bandAnim && bandAnim.pause();
+        } catch (e) {}
+        try {
+          if (on && useRing) {
+            if (!spinAnim && spin.animate) {
+              spinAnim = spin.animate(
+                [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+                { duration: 1500, iterations: Infinity, easing: 'linear' },
+              );
+            } else if (spinAnim) spinAnim.play();
+          } else if (spinAnim) spinAnim.pause();
+        } catch (e) {}
+      };
+
       host.appendChild(frame);
       D.documentElement.appendChild(host);
 
@@ -421,10 +472,20 @@ function pageExec(p) {
       const sizeFor = (max) => max
         ? { w: Math.min(Math.round(W.innerWidth * 0.78), 980), h: Math.min(Math.round(W.innerHeight * 0.82), 760) }
         : { w: 330, h: 430 };
+      const sizeSpin = () => {
+        const w = host.offsetWidth || 330;
+        const h = host.offsetHeight || 430;
+        const d = Math.round(Math.max(w, h) * 1.7);
+        spin.style.width = d + 'px';
+        spin.style.height = d + 'px';
+        spin.style.marginLeft = (-d / 2) + 'px';
+        spin.style.marginTop = (-d / 2) + 'px';
+      };
       const applySize = (max) => {
         const s = sizeFor(max);
         host.style.width = s.w + 'px';
         host.style.height = s.h + 'px';
+        sizeSpin();
       };
 
       let maximized = false;
@@ -434,9 +495,12 @@ function pageExec(p) {
         // unreliable; accept only the two ops this frame is allowed to ask for.
         const d = ev.data && ev.data.bx;                 // frame sends { bx: { op } }
         if (!d || typeof d !== 'object') return;
-        if (!['chat-close', 'chat-max', 'dock-side', 'busy'].includes(d.op)) return;
-        if (d.op === 'busy') {
-          track.style.opacity = d.on ? '1' : '0';
+        if (!['chat-close', 'chat-max', 'dock-side', 'busy', 'foot',
+              'loading-style'].includes(d.op)) return;
+        if (d.op === 'busy') { showLoading(!!d.on); return; }
+        if (d.op === 'foot') { footH = Number(d.h) || 0; placeTrack(); return; }
+        if (d.op === 'loading-style') {
+          loadingStyle = d.style === 'ring' ? 'ring' : 'line';
           return;
         }
         if (d.op === 'dock-side') {

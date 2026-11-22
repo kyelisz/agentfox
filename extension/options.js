@@ -54,11 +54,12 @@ document.getElementById('savePolicy').addEventListener('click', async () => {
 // --- the chat box itself: browser-local preferences ---
 async function loadBox() {
   const r = await browser.runtime.sendMessage({ type: 'chat-pref-get' }).catch(() => null);
-  const p = (r && r.ok) ? r : { autoFocus: true, showThinking: true, dockSide: 'right', chatMax: false };
+  const p = (r && r.ok) ? r : { autoFocus: true, showThinking: true, dockSide: 'right', loadingStyle: 'line', chatMax: false };
   document.getElementById('autoFocus').checked = p.autoFocus !== false;
   document.getElementById('showThinking').checked = p.showThinking !== false;
   document.getElementById('dockSide').value = p.dockSide === 'left' ? 'left' : 'right';
   document.getElementById('openMax').checked = !!p.chatMax;
+  document.getElementById('loadingStyle').value = p.loadingStyle === 'ring' ? 'ring' : 'line';
 }
 
 document.getElementById('saveBox').addEventListener('click', async () => {
@@ -68,6 +69,7 @@ document.getElementById('saveBox').addEventListener('click', async () => {
     autoFocus: document.getElementById('autoFocus').checked,
     showThinking: document.getElementById('showThinking').checked,
     dockSide: document.getElementById('dockSide').value,
+    loadingStyle: document.getElementById('loadingStyle').value,
     chatMax: document.getElementById('openMax').checked,
   }).catch(() => null);
   label.textContent = (r && r.ok)

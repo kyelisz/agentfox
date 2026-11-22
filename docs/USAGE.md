@@ -62,11 +62,17 @@ In the box: `⤢` maximize, `＋ New` fresh conversation, `History` past
 conversations (click one to continue it), `Connect`/`Reconnect` for the local
 bridge, `×` hide here. Enter sends, Shift+Enter adds a line.
 
-**While it waits** a single 3px gold hairline sweeps along the bottom edge of the
-panel and the status dot breathes. No box, no sentence, nothing else moving — it
-disappears the instant the answer lands. It lives on the panel wrapper outside
-the chat iframe, so a busy page cannot stall it, and `showThinking` turns it off
-if you would rather have a perfectly still box.
+**While it waits** one of two animations runs, and nothing else moves — no box,
+no spinner, no sentence:
+
+| `loadingStyle` | what you see |
+| --- | --- |
+| `line` (default) | a 3px gold bar sweeping along the rule right above the text box |
+| `ring` | a gold arc travelling around the panel's edge, over all four sides |
+
+Both are drawn on the panel wrapper outside the chat iframe (plain divs plus the
+Web Animations API), so a page's CSP, key handlers or timers cannot block or
+freeze them. `showThinking` off means no animation at all.
 
 ## Notes the page asked for ("study this")
 
@@ -100,6 +106,14 @@ bx settings set historyDays <1..365>     how long run/chat.jsonl is kept
 | `showThinking` | browser | on | the gold hairline while the agent works |
 | `dockSide` | browser | right | box sits bottom right or bottom left |
 | `openMax` | browser | off | start maximized (same as `⤢`, remembered) |
+| `loadingStyle` | browser | line | `line` above the text box, or `ring` around the panel |
+
+The browser ones can also be read and patched from a terminal:
+
+```
+bx raw chat-pref
+bx raw chat-pref '{"patch":{"loadingStyle":"ring"}}'
+```
 
 The bridge ones are visible to the agent (`run/settings.json`) — they are rules,
 not decoration. The browser ones are taste and stay in Firefox.

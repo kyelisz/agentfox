@@ -56,9 +56,15 @@
 
     <label><input id="autoFocus" type="checkbox"> Put the cursor in the box when it opens</label>
 
-    <label><input id="showThinking" type="checkbox"> Show the progress strip while the agent works</label>
-    <p class="hint">A thin gold bar with a spinner: queued → the agent picked it up → answering.
-    Turn it off if you prefer a quiet box.</p>
+    <label><input id="showThinking" type="checkbox"> Show a loading animation while the agent works</label>
+    <p class="hint">Nothing else moves and no words appear — just light, until the answer lands.
+    Turn it off if you prefer a still box.</p>
+
+    <label for="loadingStyle">Loading animation</label>
+    <select id="loadingStyle">
+      <option value="line">a line, on the rule right above the text box</option>
+      <option value="ring">a gold arc, travelling around the panel's edge</option>
+    </select>
 
     <label for="dockSide">Docked on</label>
     <select id="dockSide">

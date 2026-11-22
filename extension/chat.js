@@ -281,6 +281,7 @@
       if (p && p.ok) {
         showThinking = p.showThinking !== false;
         parentMsg({ op: 'dock-side', side: p.dockSide === 'left' ? 'left' : 'right' });
+        parentMsg({ op: 'loading-style', style: p.loadingStyle === 'ring' ? 'ring' : 'line' });
       }
       if (p && p.ok && p.chatMax) {
         HOST.classList.add('bx-max');

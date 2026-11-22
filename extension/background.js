@@ -356,6 +356,23 @@ async function handle(msg) {
       return { dataUrl, tab: { url: tab.url, title: tab.title } };
     }
 
+    // the box's browser-local preferences, from the terminal:
+    //   bx raw chat-pref
+    //   bx raw chat-pref '{"patch":{"loadingStyle":"ring"}}'
+    case 'chat-pref': {
+      const KEYS = { chatMax: false, autoFocus: true, showThinking: true, dockSide: 'right', loadingStyle: 'line' };
+      if (p.patch && typeof p.patch === 'object') {
+        const patch = {};
+        if ('chatMax' in p.patch) patch.chatMax = !!p.patch.chatMax;
+        if ('autoFocus' in p.patch) patch.autoFocus = !!p.patch.autoFocus;
+        if ('showThinking' in p.patch) patch.showThinking = !!p.patch.showThinking;
+        if ('dockSide' in p.patch) patch.dockSide = p.patch.dockSide === 'left' ? 'left' : 'right';
+        if ('loadingStyle' in p.patch) patch.loadingStyle = p.patch.loadingStyle === 'ring' ? 'ring' : 'line';
+        await browser.storage.local.set(patch);
+      }
+      return { ok: true, ...(await browser.storage.local.get(KEYS)) };
+    }
+
     case 'chat': return openChat(p.tabId);
 
     case 'chat-close': return closeChat(p.tabId);
@@ -493,7 +510,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type === 'chat-pref-get') {
     return browser.storage.local
-      .get({ chatMax: false, autoFocus: true, showThinking: true, dockSide: 'right' })
+      .get({ chatMax: false, autoFocus: true, showThinking: true, dockSide: 'right', loadingStyle: 'line' })
       .then((v) => ({ ok: true, ...v }));
   }
   if (msg.type === 'chat-pref-set') {
@@ -502,6 +519,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     if ('autoFocus' in msg) patch.autoFocus = !!msg.autoFocus;
     if ('showThinking' in msg) patch.showThinking = !!msg.showThinking;
     if ('dockSide' in msg) patch.dockSide = msg.dockSide === 'left' ? 'left' : 'right';
+    if ('loadingStyle' in msg) patch.loadingStyle = msg.loadingStyle === 'ring' ? 'ring' : 'line';
     return browser.storage.local.set(patch).then(() => ({ ok: true, ...patch }));
   }
   if (msg.type === 'chat-hide-tab') {
