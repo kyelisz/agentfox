@@ -71,7 +71,8 @@ Stuck? `bx doctor` names the broken link and the fix. Full walkthrough:
 | | |
 |---|---|
 | **Browse for the agent** | `bx read`, `bx find`, `bx click`, `bx type`, `bx press`, `bx scroll`, `bx shot`, `bx eval`, `bx wait` — across every window and tab |
-| **A chat box in the page** | white/gold panel with `⤢` maximize, `＋ New` chat, `History` to continue an old conversation, per-tab docking |
+| **A chat box in the page** | white/gold panel in its own iframe: `⤢` maximize, `＋ New` chat, `History` to continue an old conversation, per-tab docking |
+| **A loading line, not a spinner** | one 3px gold hairline sweeps the panel's bottom edge until the answer lands — nothing else moves |
 | **It answers by itself** | an optional second free-pi session in tmux answers from the box in ~5–12 s |
 | **A "study this" button** | one click in your page: the agent looks at the live state for a few seconds, then writes a folder of small `.txt` notes — best moves, what to delete, where to search ([docs](docs/STUDY-BUTTON.md)) |
 | **Survives restarts** | the launcher re-installs the add-on over Firefox's remote debugger at every start |

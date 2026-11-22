@@ -15,12 +15,8 @@
  *   bx-watch-firefox --daemon   # detach (used by autostart)
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import net from 'node:net';
-import { createRequire } from 'node:module';
-
-const pl = createRequire(import.meta.url)('./lib/platform.js');
 
 const ROOT = join(dirname(new URL(import.meta.url).pathname), '..');
 const RUN = join(ROOT, 'run');
@@ -36,22 +32,25 @@ const log = (...a) => {
 };
 
 function firefoxRunning() {
-  const comms = pl.isWin ? ['firefox.exe'] : ['firefox', 'firefox-bin'];
-  const pid = pl.processRunning(pl.isWin ? 'firefox.exe' : 'firefox', { comms });
-  if (!pid) return false;
-  // content processes are not the browser itself
-  return !pl.processRunning('-contentproc', { comms }) && !pl.processRunning('crashhelper', { comms });
+  for (const pid of readdirSync('/proc')) {
+    if (!/^\d+$/.test(pid)) continue;
+    try {
+      const comm = readFileSync(`/proc/${pid}/comm`, 'utf8').trim();
+      if (comm !== 'firefox-bin') continue;
+      const cl = readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ');
+      if (!cl.includes('-contentproc') && !cl.includes('crashhelper')) return true;
+    } catch {}
+  }
+  return false;
 }
 
 function portOpen(port) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ host: '127.0.0.1', port });
-    const done = (ok) => { try { sock.destroy(); } catch {} resolve(ok); };
-    sock.setTimeout(700);
-    sock.once('connect', () => done(true));
-    sock.once('timeout', () => done(false));
-    sock.once('error', () => done(false));
-  });
+  try {
+    execFileSync('bash', ['-c', `timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${port}" 2>/dev/null`], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function extensionAttached() {
@@ -67,12 +66,9 @@ async function extensionAttached() {
 
 function notify(title, body) {
   try {
-    if (pl.isMac) execFileSync('osascript', ['-e', `display notification "${body.replace(/"/g, "'")}" with title "${title}"`], { stdio: 'ignore' });
-    else if (pl.isWin) execFileSync('powershell', ['-NoProfile', '-Command',
-      `[reflection.assembly]::LoadWithPartialName('System.Windows.Forms');[System.Windows.Forms.MessageBox]::Show('${body.replace(/'/g, "''")}','${title}')`], { stdio: 'ignore' });
-    else execFileSync('notify-send', ['-a', 'free-pi', title, body], { stdio: 'ignore' });
+    execFileSync('notify-send', ['-a', 'free-pi', title, body], { stdio: 'ignore' });
   } catch {
-    log('notification failed:', title, '-', body);
+    log('notify-send missing:', title, '-', body);
   }
 }
 
@@ -98,7 +94,7 @@ async function main() {
     const ff = firefoxRunning();
     if (!ff) { warned = false; blindSince = 0; continue; }
     if (await extensionAttached()) { warned = false; blindSince = 0; continue; }
-    if (await portOpen(PORT)) {
+    if (portOpen(PORT)) {
       log('extension missing but the debugger port is open — installing');
       if (install()) { await sleep(3000); if (await extensionAttached()) { warned = false; continue; } }
       continue;

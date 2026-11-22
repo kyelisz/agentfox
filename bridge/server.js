@@ -56,7 +56,7 @@ const queue = [];          // commands waiting for a poller to show up
 
 /* ---- settings: two switches the user owns, shared with the agent ------- */
 const SETTINGS_FILE = path.join(RUN, 'settings.json');
-const DEFAULTS = { askLocalhost: true, alwaysOn: false };
+const DEFAULTS = { askLocalhost: true, alwaysOn: false, historyDays: 30 };
 let settings = { ...DEFAULTS };
 try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) }; } catch {}
 
@@ -112,8 +112,48 @@ try {
   }
 } catch {}
 
+// drop transcript lines older than settings.historyDays (0 keeps everything)
+function pruneTranscript() {
+  const days = Number(settings.historyDays) || 0;
+  if (days <= 0) return 0;
+  let lines = [];
+  try { lines = fs.readFileSync(CHAT_LOG, 'utf8').trim().split('\n').filter(Boolean); } catch { return 0; }
+  const cutoff = Date.now() - days * 86400000;
+  const kept = lines.filter((l) => {
+    try { const m = JSON.parse(l); return (m.ts || 0) >= cutoff; } catch { return false; }
+  });
+  if (kept.length === lines.length) return 0;
+  try { fs.writeFileSync(CHAT_LOG, kept.length ? kept.join('\n') + '\n' : ''); } catch {}
+  log('pruned transcript', (lines.length - kept.length) + ' old messages (historyDays=' + days + ')');
+  return lines.length - kept.length;
+}
+
 function chatLog(rec) {
   try { fs.appendFileSync(CHAT_LOG, JSON.stringify(rec) + '\n'); } catch {}
+}
+
+const pickedAt = new Map();   // message id -> when the agent side picked it up
+
+function markPicked(recs) {
+  const now = Date.now();
+  for (const r of recs || []) if (r && r.id && !pickedAt.has(r.id)) pickedAt.set(r.id, now);
+}
+
+/** For the box's loading bar: is anything waiting for an answer, and how far along? */
+function pendingState(thread) {
+  const t = thread || chat.thread || 'main';
+  const agents = chat.agents.filter((m) => (m.thread || 'main') === t);
+  const lastAgentTs = agents.length ? agents[agents.length - 1].ts : 0;
+  const waiting = chat.users.filter((m) => (m.thread || 'main') === t && m.ts > lastAgentTs);
+  const first = waiting[0] || null;
+  return {
+    thread: t,
+    pending: waiting.length,
+    since: first ? first.ts : 0,
+    ageMs: first ? Date.now() - first.ts : 0,
+    picked: first ? (pickedAt.get(first.id) || 0) : 0,
+    agentOnline: chat.waiters.length > 0,
+  };
 }
 
 function pushUserMessage(tab, url, title, text, thread) {
@@ -281,6 +321,7 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'BAD_JSON' }); }
       if (typeof body.askLocalhost === 'boolean') settings.askLocalhost = body.askLocalhost;
       if (typeof body.alwaysOn === 'boolean') settings.alwaysOn = body.alwaysOn;
+      if (Number(body.historyDays) >= 1 && Number(body.historyDays) <= 365) settings.historyDays = Math.round(Number(body.historyDays));
       saveSettings();
       const files = applyAlwaysOn();
       log('settings', JSON.stringify(settings));
@@ -397,6 +438,10 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { messages: all.slice(-limit), seq: chat.seq });
   }
 
+  if (url.pathname === '/chat/pending' && tokenOK) {
+    return json(res, 200, { ok: true, ...pendingState(url.searchParams.get('thread') || '') });
+  }
+
   if (url.pathname === '/chat/replies') {
     if (!tokenOK) return json(res, 401, { error: 'BAD_TOKEN' });
     const tab = Number(url.searchParams.get('tab') || 0);
@@ -404,7 +449,11 @@ const server = http.createServer(async (req, res) => {
     cidLast.set(url.searchParams.get('cid') || 'anon', Date.now());
     const thread = url.searchParams.get('thread') || '';
     const replies = chat.agents.filter((m) => m.ts > since && (m.tab === 'all' || m.tab === tab) && (!thread || (m.thread || 'main') === thread));
-    return json(res, 200, { replies, now: Date.now(), agentOnline: waiters.length > 0 || !!(ws && ws.readyState === 1) });
+    return json(res, 200, {
+      replies, now: Date.now(),
+      agentOnline: waiters.length > 0 || !!(ws && ws.readyState === 1),
+      pending: pendingState(thread),
+    });
   }
 
   // ---- chat, agent side ---------------------------------------------------
@@ -416,6 +465,7 @@ const server = http.createServer(async (req, res) => {
     const peek = url.searchParams.get('peek') === '1';
     const limit = Math.min(Number(url.searchParams.get('limit') || 50), 200);
     const msgs = chat.users.filter((m) => !m.read).slice(-limit);
+    markPicked(msgs);
     if (!peek) for (const m of chat.users) m.read = true;
     return json(res, 200, { messages: msgs, pending: chat.users.filter((m) => !m.read).length });
   }
@@ -424,6 +474,7 @@ const server = http.createServer(async (req, res) => {
     const timeout = Math.min(Number(url.searchParams.get('timeout') || 60000), 300000);
     const unread = chat.users.filter((m) => !m.read);
     if (unread.length) {
+      markPicked(unread);
       for (const m of chat.users) m.read = true;
       return json(res, 200, { messages: unread.slice(-50) });
     }
@@ -564,6 +615,7 @@ wss.on('connection', (sock) => {
 /* ------------------------------------------------------------------- boot */
 
 server.listen(PORT, HOST, () => {
+  pruneTranscript();
   fs.writeFileSync(path.join(RUN, 'server.pid'), String(process.pid));
   log(`listening on ${HOST}:${PORT} pid ${process.pid}`);
   process.stdout.write(`bx bridge listening on http://${HOST}:${PORT}\n`);

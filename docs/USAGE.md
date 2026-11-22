@@ -62,6 +62,12 @@ In the box: `⤢` maximize, `＋ New` fresh conversation, `History` past
 conversations (click one to continue it), `Connect`/`Reconnect` for the local
 bridge, `×` hide here. Enter sends, Shift+Enter adds a line.
 
+**While it waits** a single 3px gold hairline sweeps along the bottom edge of the
+panel and the status dot breathes. No box, no sentence, nothing else moving — it
+disappears the instant the answer lands. It lives on the panel wrapper outside
+the chat iframe, so a busy page cannot stall it, and `showThinking` turns it off
+if you would rather have a perfectly still box.
+
 ## Notes the page asked for ("study this")
 
 ```
@@ -75,11 +81,28 @@ and `examples/study-button.html` for the drop-in snippet.
 
 ## Settings the user owns
 
+`about:addons` → agentfox → Options has all of them; the terminal reaches the
+ones that are rules (the bridge) and the ones that are taste (the browser).
+
 ```
-bx settings                              {"askLocalhost":true,"alwaysOn":false}
+bx settings                              {"askLocalhost":true,"alwaysOn":true,"historyDays":30}
 bx settings set askLocalhost on|off      ask before binding any localhost port
 bx settings set alwaysOn on|off          autostart + box docking + watcher
+bx settings set historyDays <1..365>     how long run/chat.jsonl is kept
 ```
+
+| Setting | Where | Default | What it does |
+| --- | --- | --- | --- |
+| `askLocalhost` | bridge | on | the agent asks in the box before opening any local port |
+| `alwaysOn` | bridge | off | autostart, box in every tab, add-on reinstalled at launch |
+| `historyDays` | bridge | 30 | transcript older than this is dropped when the bridge starts |
+| `autoFocus` | browser | on | cursor is in the input when the box opens |
+| `showThinking` | browser | on | the gold hairline while the agent works |
+| `dockSide` | browser | right | box sits bottom right or bottom left |
+| `openMax` | browser | off | start maximized (same as `⤢`, remembered) |
+
+The bridge ones are visible to the agent (`run/settings.json`) — they are rules,
+not decoration. The browser ones are taste and stay in Firefox.
 
 ## The auto-answering session
 

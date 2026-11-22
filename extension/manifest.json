@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Firefox Bridge (free-pi)",
+  "name": "agentfox",
   "version": "1.0.0",
-  "description": "Lets a local free-pi agent read and drive your Firefox tabs over a loopback socket. Private, local-only.",
+  "description": "agentfox \u2014 a browser AI agent for your real Firefox. Private, local-only.",
   "browser_specific_settings": {
     "gecko": {
       "id": "firefox-bridge@free-pi.local",
@@ -35,7 +35,7 @@
     "open_in_tab": true
   },
   "browser_action": {
-    "default_title": "Firefox Bridge",
+    "default_title": "agentfox",
     "default_popup": "popup.html"
   },
   "commands": {
@@ -43,7 +43,7 @@
       "suggested_key": {
         "default": "Alt+Shift+B"
       },
-      "description": "Show/hide the free-pi box in this tab"
+      "description": "Show/hide the agentfox box in this tab"
     }
   },
   "web_accessible_resources": [

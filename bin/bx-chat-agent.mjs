@@ -141,12 +141,6 @@ async function loop(once) {
 }
 
 if (cmd === 'start') {
-  if (!haveTmux()) {
-    log('tmux is required for the auto-answering session.');
-    log('  Linux: sudo apt install tmux    macOS: brew install tmux    Windows: use WSL');
-    log('Without tmux the box still works: messages queue for your own free-pi session.');
-    process.exit(3);
-  }
   startSession();
   loop(false);
 } else if (cmd === 'once') {

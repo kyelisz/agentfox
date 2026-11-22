@@ -455,6 +455,13 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       .then((r) => ({ ok: !!(r && r.ok), id: r && r.id }))
       .catch((e) => { setError(e); return { ok: false, error: String((e && e.message) || e) }; });
   }
+  if (msg.type === 'chat-pending') {
+    const th = msg.thread ? `?thread=${encodeURIComponent(msg.thread)}` : '';
+    return bridgeFetch(`/chat/pending${th}`)
+      .then((r) => ({ ok: true, ...r }))
+      .catch(() => ({ ok: false, pending: 0, agentOnline: false }));
+  }
+
   if (msg.type === 'chat-poll') {
     const tab = sender && sender.tab ? sender.tab : {};
     const th = msg.thread ? `&thread=${encodeURIComponent(msg.thread)}` : '';
@@ -485,10 +492,17 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }));
   }
   if (msg.type === 'chat-pref-get') {
-    return browser.storage.local.get({ chatMax: false }).then((v) => ({ ok: true, chatMax: !!v.chatMax }));
+    return browser.storage.local
+      .get({ chatMax: false, autoFocus: true, showThinking: true, dockSide: 'right' })
+      .then((v) => ({ ok: true, ...v }));
   }
   if (msg.type === 'chat-pref-set') {
-    return browser.storage.local.set({ chatMax: !!msg.chatMax }).then(() => ({ ok: true }));
+    const patch = {};
+    if ('chatMax' in msg) patch.chatMax = !!msg.chatMax;
+    if ('autoFocus' in msg) patch.autoFocus = !!msg.autoFocus;
+    if ('showThinking' in msg) patch.showThinking = !!msg.showThinking;
+    if ('dockSide' in msg) patch.dockSide = msg.dockSide === 'left' ? 'left' : 'right';
+    return browser.storage.local.set(patch).then(() => ({ ok: true, ...patch }));
   }
   if (msg.type === 'chat-hide-tab') {
     const id = msg.tabId || (sender && sender.tab && sender.tab.id);

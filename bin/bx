@@ -152,7 +152,7 @@ async function saveShot(dataUrl, dest) {
   return file;
 }
 
-const HELP = `bx — Firefox bridge for free-pi
+const HELP = `bx — agentfox, a browser AI agent for your Firefox
 
   bx status                     bridge + extension + active tab
   bx tabs                       list tabs (id, title, url)
@@ -353,7 +353,12 @@ async function main() {
       if (sub === 'set') {
         const key = (pos[2] || '').toLowerCase();
         const val = (pos[3] || '').toLowerCase();
-        if (!['asklocalhost', 'alwayson'].includes(key)) return fail('usage: bx settings set askLocalhost|alwaysOn on|off');
+        if (key === 'historydays') {
+          const n = Number(pos[3]);
+          if (!(n >= 1 && n <= 365)) return fail('usage: bx settings set historyDays <1..365>');
+          return print(await bridgePost('/settings', { historyDays: Math.round(n) }));
+        }
+        if (!['asklocalhost', 'alwayson'].includes(key)) return fail('usage: bx settings set askLocalhost|alwaysOn on|off  ·  historyDays <days>');
         if (!['on', 'off', 'true', 'false'].includes(val)) return fail('usage: bx settings set ' + pos[2] + ' on|off');
         const body = key === 'asklocalhost' ? { askLocalhost: val === 'on' || val === 'true' } : { alwaysOn: val === 'on' || val === 'true' };
         return print(await bridgePost('/settings', body));

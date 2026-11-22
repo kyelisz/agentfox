@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Firefox Bridge — options</title>
+  <title>agentfox — options</title>
   <style>
     :root { color-scheme: light dark; }
     body { font: 14px/1.5 system-ui, sans-serif; max-width: 620px; margin: 32px auto; padding: 0 16px; }
@@ -17,7 +17,7 @@
   </style>
 </head>
 <body>
-  <h2>Firefox Bridge</h2>
+  <h2>agentfox</h2>
   <p class="hint">Local only. The extension dials <code>ws://127.0.0.1:&lt;port&gt;</code> and only accepts
   commands that arrive over that socket. No data leaves your machine and nothing is written to the cloud.</p>
 
@@ -41,13 +41,45 @@
     <p class="hint">Blocks the agent from opening a local web server / dev server / any port on
     <code>127.0.0.1</code> without your explicit go-ahead. It must ask in the chat and wait for a yes.</p>
 
-    <label><input id="alwaysOn" type="checkbox"> Always on — free-pi with any browser, always in Firefox</label>
+    <label><input id="alwaysOn" type="checkbox"> Always on — agentfox with any browser, always in Firefox</label>
     <p class="hint">Bridge + chat assistant start with your desktop, the Firefox launcher installs the
     add-on at every start, the chat box follows you into every tab you open, and the agent keeps
     working across every window and tab without a reconnect. Nothing else on the machine is touched.</p>
 
     <button id="savePolicy">Save</button>
     <span id="policySaved" class="hint"></span>
+  </div>
+
+  <div class="box">
+    <h2 style="margin:0 0 6px">The chat box</h2>
+    <p class="hint" style="margin-top:0">These live in the browser, so they apply to the panel itself.</p>
+
+    <label><input id="autoFocus" type="checkbox"> Put the cursor in the box when it opens</label>
+
+    <label><input id="showThinking" type="checkbox"> Show the progress strip while the agent works</label>
+    <p class="hint">A thin gold bar with a spinner: queued → the agent picked it up → answering.
+    Turn it off if you prefer a quiet box.</p>
+
+    <label for="dockSide">Docked on</label>
+    <select id="dockSide">
+      <option value="right">bottom right</option>
+      <option value="left">bottom left</option>
+    </select>
+
+    <label><input id="openMax" type="checkbox"> Open big (maximized) by default</label>
+
+    <button id="saveBox">Save</button>
+    <span id="boxSaved" class="hint"></span>
+  </div>
+
+  <div class="box">
+    <h2 style="margin:0 0 6px">History</h2>
+    <label for="historyDays">Keep the transcript for</label>
+    <input id="historyDays" type="number" min="1" max="365" step="1"> days
+    <p class="hint">Older messages are dropped when the bridge starts. <code>run/chat.jsonl</code>
+    is the only place the transcript lives.</p>
+    <button id="saveHistory">Save</button>
+    <span id="historySaved" class="hint"></span>
   </div>
 
   <p class="hint" style="margin-top:22px">Status is in the toolbar popup. Reconnect after changing the port.</p>

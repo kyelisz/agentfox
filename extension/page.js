@@ -366,7 +366,7 @@ function pageExec(p) {
       // The panel is an iframe on moz-extension://, not page DOM: keys typed in
       // it never reach the page (games bind space, arrows, letters and steal
       // focus), and the page's CSS cannot reach it either.
-      const CHAT_VER = '5';
+      const CHAT_VER = '6';
       const stale = D.getElementById('bxchat-host');
       if (stale && stale.dataset.bxver === CHAT_VER) return res({ mounted: true, already: true });
       if (stale) { try { stale.remove(); } catch (e) {} }
@@ -385,8 +385,35 @@ function pageExec(p) {
       const frame = D.createElement('iframe');
       frame.src = browser.runtime.getURL('chat-frame.html');
       frame.setAttribute('allowtransparency', 'true');
-      frame.setAttribute('title', 'free-pi chat');
+      frame.setAttribute('title', 'agentfox chat');
       frame.style.cssText = 'width:100%;height:100%;border:0;margin:0;padding:0;background:transparent;color-scheme:light;display:block;';
+      // the loading hairline lives on the wrapper, not inside the frame: one div,
+      // a repeating gold gradient, moved with a WAAPI animation (no <style>, so
+      // page CSP cannot block it).
+      const track = D.createElement('div');
+      track.style.cssText = [
+        'position:absolute', 'left:0', 'right:0', 'bottom:0', 'height:3px',
+        'background:#f4e8cb', 'overflow:hidden', 'pointer-events:none',
+        'border-radius:0 0 14px 14px', 'opacity:0', 'transition:opacity .15s',
+        'z-index:2',
+      ].join(';') + ';';
+      const band = D.createElement('div');
+      band.style.cssText = [
+        'position:absolute', 'top:0', 'bottom:0', 'left:0', 'width:60px',
+        'background:linear-gradient(90deg,rgba(232,207,146,0),#c9a227 55%,rgba(232,207,146,0))',
+      ].join(';') + ';';
+      track.appendChild(band);
+      host.appendChild(track);
+
+      let bandAnim = null;
+      if (band.animate) {
+        try {
+          bandAnim = band.animate(
+            [{ left: '-60px' }, { left: '100%' }],   // follows the panel width, maximized or not
+            { duration: 1300, iterations: Infinity, easing: 'linear' },
+          );
+        } catch (e) {}
+      }
       host.appendChild(frame);
       D.documentElement.appendChild(host);
 
@@ -401,12 +428,23 @@ function pageExec(p) {
       };
 
       let maximized = false;
+      let side = 'right';
       const onMsg = (ev) => {
         // content-script windows are Xray wrappers, so comparing ev.source is
         // unreliable; accept only the two ops this frame is allowed to ask for.
         const d = ev.data && ev.data.bx;                 // frame sends { bx: { op } }
         if (!d || typeof d !== 'object') return;
-        if (d.op !== 'chat-close' && d.op !== 'chat-max') return;
+        if (!['chat-close', 'chat-max', 'dock-side', 'busy'].includes(d.op)) return;
+        if (d.op === 'busy') {
+          track.style.opacity = d.on ? '1' : '0';
+          return;
+        }
+        if (d.op === 'dock-side') {
+          side = d.side === 'left' ? 'left' : 'right';
+          host.style.left = side === 'left' ? '16px' : 'auto';
+          host.style.right = side === 'right' ? '16px' : 'auto';
+          return;
+        }
         if (d.op === 'chat-max') {
           maximized = !!d.on;
           applySize(maximized);

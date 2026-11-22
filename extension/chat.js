@@ -23,7 +23,7 @@
     <div class="bx-box">
       <div class="bx-head">
         <span class="bx-dot"></span>
-        <span class="bx-title">free-pi</span>
+        <span class="bx-title">agentfox</span>
         <span class="bx-mini">connecting…</span>
         <button class="bx-max" title="maximize / restore">⤢</button>
         <button class="bx-newc" title="start a new chat">＋ New</button>
@@ -57,6 +57,9 @@
   let alive = true;
   let backoff = 2000;
   let timer = null;
+  let thinkTimer = null;
+  let thinkStart = 0;
+  let showThinking = true;
 
   const add = (cls, text) => {
     const el = D.createElement('div');
@@ -78,6 +81,7 @@
   const seed = async (t) => {
     thread = t || thread;
     const r = await browser.runtime.sendMessage({ type: 'chat-history', thread });
+    stopThinking();
     log.textContent = '';
     since = 0;
     if (r && r.ok) {
@@ -187,6 +191,32 @@
   });
   HOST.querySelector('.bx-history-close').addEventListener('click', () => { histPanel.hidden = true; });
 
+  /* ---- "working on it": a real progress bar when the stages are known ---- */
+  // one thin gold line that keeps sweeping until the answer lands; nothing else
+  const startThinking = () => {
+    if (!showThinking) return;
+    thinkStart = Date.now();
+    dot.className = 'bx-dot on busy';
+    parentMsg({ op: 'busy', on: true });        // the page draws the hairline
+    clearInterval(thinkTimer);
+    thinkTimer = setInterval(thinkTick, 1500);
+  };
+
+  const stopThinking = () => {
+    clearInterval(thinkTimer);
+    thinkTimer = null;
+    dot.className = 'bx-dot on';
+    parentMsg({ op: 'busy', on: false });
+  };
+
+  // the line is the feedback; this only decides when it should disappear
+  const thinkTick = async () => {
+    if (Date.now() - thinkStart > 240000) { stopThinking(); return; }
+    let p = null;
+    try { p = await browser.runtime.sendMessage({ type: 'chat-pending', thread }); } catch (e) {}
+    if (p && p.ok && p.pending === 0 && Date.now() - thinkStart > 1500) stopThinking();
+  };
+
   /* ---- send ---- */
   const send = async () => {
     const text = input.value.trim();
@@ -202,6 +232,7 @@
       } else {
         setOnline(true);
         add('bx-sys', 'queued — the agent reads this on its next turn');
+        startThinking();
       }
     } catch (e) {
       add('bx-sys', 'not delivered: ' + ((e && e.message) || e));
@@ -220,6 +251,7 @@
         add('bx-agent', m.text);
         since = Math.max(since, m.ts);
       }
+      if ((r.replies || []).length) stopThinking();
       if (backoff !== 2000) backoff = 2000;
       timer = setTimeout(poll, 2000);
     } catch (e) {
@@ -246,6 +278,10 @@
   (async () => {
     try {
       const p = await browser.runtime.sendMessage({ type: 'chat-pref-get' });
+      if (p && p.ok) {
+        showThinking = p.showThinking !== false;
+        parentMsg({ op: 'dock-side', side: p.dockSide === 'left' ? 'left' : 'right' });
+      }
       if (p && p.ok && p.chatMax) {
         HOST.classList.add('bx-max');
         HOST.querySelector('.bx-max').textContent = '⤡';
@@ -255,5 +291,9 @@
     await loadCurrent();
     poll();
   })();
-  setTimeout(() => { try { input.focus(); } catch (e) {} }, 60);
+  setTimeout(async () => {
+    let autofocus = true;
+    try { const p = await browser.runtime.sendMessage({ type: 'chat-pref-get' }); autofocus = p ? p.autoFocus !== false : true; } catch (e) {}
+    if (autofocus) { try { input.focus(); } catch (e) {} }
+  }, 60);
 })();

@@ -1,8 +1,119 @@
-#!/bin/sh
-# shim so that `bx-firefox` works from a symlink on PATH
-SELF="$0"
-while [ -L "$SELF" ]; do
-  T="$(readlink "$SELF")"
-  case "$T" in /*) SELF="$T" ;; *) SELF="$(dirname "$SELF")/$T" ;; esac
+#!/usr/bin/env bash
+# bx-firefox — launch Firefox so the bridge extension is there every time.
+#
+# Release Firefox refuses unsigned add-ons, and a temporary add-on dies with the
+# browser. So: start Firefox with the remote debugger open, then install the
+# add-on over the Remote Debugging Protocol before you ever see the window.
+# Same profile, same tabs, same logins — nothing copied, nothing leaked.
+#
+# usage: bx-firefox [normal firefox args...]
+set -u
+DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+XPI="$DIR/dist/firefox-bridge.xpi"
+PORT="${BX_RDP_PORT:-6011}"
+FF="${BX_FIREFOX_BIN:-$(command -v firefox || echo /usr/lib/firefox/firefox)}"
+PROFILE="${BX_PROFILE:-}"
+
+log() { printf '[bx-firefox] %s\n' "$*" >&2; }
+
+if [ ! -f "$XPI" ]; then
+  log "building the xpi first"
+  "$DIR/bin/bx" pack >/dev/null || { log "could not build dist/firefox-bridge.xpi"; exit 1; }
+fi
+
+# resolve the default profile if not given
+if [ -z "$PROFILE" ]; then
+  PROFILE="$(python3 - "$HOME/.mozilla/firefox" <<'PY'
+import configparser, os, sys
+base = sys.argv[1]
+ini = os.path.join(base, 'profiles.ini')
+cp = configparser.ConfigParser()
+cp.read(ini)
+best = None
+sections = [s for s in cp.sections() if s.startswith('Profile')]
+for s in sections:
+    name = cp[s].get('Name', '')
+    path = cp[s].get('Path', '')
+    if cp[s].get('IsRelative', '1') == '1':
+        path = os.path.join(base, path)
+    if name.startswith('default-release'):
+        best = path
+        break
+    if best is None:
+        best = path
+print(best or '')
+PY
+)"
+fi
+if [ -z "$PROFILE" ] || [ ! -d "$PROFILE" ]; then
+  log "no Firefox profile found — starting Firefox normally"
+  exec "$FF" "$@"
+fi
+log "profile: $PROFILE"
+
+# the debugger server needs these two prefs; user.js is read at every start
+USERJS="$PROFILE/user.js"
+touch "$USERJS"
+# chrome.enabled is what actually lets the debugger server bind in release builds
+for pref in 'user_pref("devtools.debugger.remote-enabled", true);' \
+            'user_pref("devtools.debugger.prompt-connection", false);' \
+            'user_pref("devtools.chrome.enabled", true);'; do
+  grep -qxF "$pref" "$USERJS" 2>/dev/null || printf '%s\n' "$pref" >> "$USERJS"
 done
-exec node "$(cd "$(dirname "$SELF")" && pwd)/bx-firefox.mjs" "$@"
+
+port_open() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null
+}
+
+# a lock file from a browser that is still shutting down would make us hand off
+# to a Firefox that has no debugger port — wait for it to clear
+profile_in_use() {
+  local lock="$PROFILE/lock"
+  [ -L "$lock" ] || return 1
+  local holder pid
+  holder="$(readlink "$lock" 2>/dev/null)" || return 1
+  pid="${holder##*:+}"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  return 0
+}
+
+# someone is already listening (a Firefox we launched earlier)? install into it
+if port_open; then
+  log "debugger port $PORT is already open — installing into the running Firefox"
+  node "$DIR/bridge/rdp-install.js" "$PORT" "$(cd "$(dirname "$XPI")" && pwd)/$(basename "$XPI")" 30000 >/tmp/bx-rdp.log 2>&1 \
+    && log "add-on installed: $(cat /tmp/bx-rdp.log)" \
+    || log "could not install: $(cat /tmp/bx-rdp.log)"
+  exec "$FF" "$@"
+fi
+
+for _ in $(seq 1 20); do
+  profile_in_use || break
+  sleep 1
+done
+
+if profile_in_use; then
+  log "Firefox is already running — handing off (quit it and start again to load the add-on)"
+  exec "$FF" "$@"
+fi
+
+# -foreground keeps this process as the one that owns the debugger port:
+# without it Firefox re-execs into the background and drops the flag.
+"$FF" -foreground -no-remote -start-debugger-server "$PORT" "$@" &
+FFPID=$!
+
+# install the add-on over RDP (it retries until Firefox opens the port)
+if node "$DIR/bridge/rdp-install.js" "$PORT" "$(cd "$(dirname "$XPI")" && pwd)/$(basename "$XPI")" 60000 >/tmp/bx-rdp.log 2>&1; then
+  log "add-on installed: $(cat /tmp/bx-rdp.log)"
+  "$DIR/bin/bx" up >/dev/null 2>&1 || true
+  # the chat-box responder: its own free-pi session, started with the browser
+  if ! pgrep -f "bx-chat-agent.mjs start" >/dev/null 2>&1; then
+    setsid nohup node "$DIR/bin/bx-chat-agent.mjs" start >/dev/null 2>&1 &
+    log "chat agent started (answers the in-page box)"
+  fi
+else
+  log "could not install over RDP: $(cat /tmp/bx-rdp.log 2>/dev/null)"
+  log "open about:debugging and pick dist/firefox-bridge.xpi by hand"
+fi
+
+wait $FFPID
