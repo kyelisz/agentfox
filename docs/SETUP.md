@@ -1,4 +1,4 @@
-# Setup, step by step
+# agentfox — setup, step by step
 
 Two minutes on Linux/macOS, three on Windows. Nothing here needs `sudo`.
 
@@ -27,8 +27,8 @@ tmux -V                    # optional, only for bx chatagent
 ## 1. Install (Linux / macOS)
 
 ```bash
-git clone https://github.com/kyelisz/free-pi-browser-bridge
-cd free-pi-browser-bridge
+git clone https://github.com/kyelisz/agentfox
+cd agentfox
 ./install.sh
 ```
 
@@ -49,8 +49,8 @@ Skip the icon step with `./install.sh --no-icon`.
 ## 2. Install (Windows)
 
 ```bat
-git clone https://github.com/kyelisz/free-pi-browser-bridge
-cd free-pi-browser-bridge
+git clone https://github.com/kyelisz/agentfox
+cd agentfox
 install.bat
 ```
 
@@ -134,7 +134,7 @@ bx chatagent off
 bx down
 rm -f ~/.local/bin/bx ~/.local/bin/bx-firefox ~/.local/bin/bx-watch-firefox ~/.local/bin/bx-chat-agent
 rm -f ~/.config/autostart/free-pi-*.desktop
-rm -rf ~/free-pi-browser-bridge
+rm -rf ~/agentfox
 ```
 
 Then remove the three `user_pref("devtools…")` lines from `<profile>/user.js`

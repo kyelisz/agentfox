@@ -1,7 +1,7 @@
 {
-  "name": "free-pi-browser-bridge",
+  "name": "agentfox",
   "version": "1.1.0",
-  "description": "Let a free-pi (or any pi) agent drive your real Firefox \u2014 read pages, click, type, log in \u2014 plus a small chat box inside the page that talks back.",
+  "description": "agentfox \u2014 a browser AI agent: drive your real Firefox from a terminal agent, with a white-and-gold chat box inside the page.",
   "license": "MIT",
   "type": "commonjs",
   "bin": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# free-pi browser bridge — one-shot setup for Linux and macOS.
+# agentfox — a browser AI agent. One-shot setup for Linux and macOS.
 #
 #   ./install.sh             # install, wire your Firefox icon, build the add-on
 #   ./install.sh --no-icon   # skip the desktop-icon override
@@ -19,7 +19,7 @@ ok()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 bad() { printf '  \033[31m✗\033[0m %s\n' "$*"; }
 tip() { printf '    \033[2m%s\033[0m\n' "$*"; }
 
-say "free-pi browser bridge"
+say "agentfox — a browser AI agent"
 echo "  drive your real Firefox from a terminal agent"
 
 say "1/7  Node 22"

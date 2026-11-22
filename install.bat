@@ -1,5 +1,5 @@
 @echo off
-REM free-pi browser bridge - one-shot setup for Windows.
+REM agentfox - a browser AI agent. One-shot setup for Windows.
 REM Needs Node 22+ and Firefox. Double-click this file. No admin rights needed.
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"

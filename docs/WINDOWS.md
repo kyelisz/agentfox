@@ -1,4 +1,4 @@
-# Windows
+# agentfox on Windows
 
 Everything works on Windows except two conveniences, so here is the honest
 version.
@@ -21,8 +21,8 @@ version.
 ## Install
 
 ```bat
-git clone https://github.com/kyelisz/free-pi-browser-bridge
-cd free-pi-browser-bridge
+git clone https://github.com/kyelisz/agentfox
+cd agentfox
 install.bat
 ```
 
@@ -43,10 +43,10 @@ settings → Environment Variables → *Path* → New) so `bx` works anywhere.
 2. replace *Target* with:
 
    ```
-   C:\path\to\free-pi-browser-bridge\bx-firefox.cmd
+   C:\path\to\agentfox\bx-firefox.cmd
    ```
 
-3. *Start in*: `C:\path\to\free-pi-browser-bridge`
+3. *Start in*: `C:\path\to\agentfox`
 
 Then quit Firefox, start it from that shortcut, give it ~10 s and run:
 

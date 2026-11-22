@@ -1,8 +1,8 @@
-# free-pi browser bridge
+# agentfox
 
-Drive **your real Firefox** from a terminal agent — read pages, click, type, log in,
-switch tabs — and give the page a small **white-and-gold chat box** that talks back
-to the agent from inside the browser.
+**A browser AI agent for your real Firefox.** Read pages, click, type, log in and
+switch tabs from a terminal agent — and talk to it from a white-and-gold box that
+lives inside the page.
 
 No cloud, no Playwright, no second browser profile. Everything stays on
 `127.0.0.1`, and the add-on is yours: a local folder you load, not something from
@@ -36,8 +36,8 @@ only ever run free-pi through `npx free-pi-cli@latest`, that is fine too.)
 ### Step 3 — this repo
 
 ```bash
-git clone https://github.com/kyelisz/free-pi-browser-bridge
-cd free-pi-browser-bridge
+git clone https://github.com/kyelisz/agentfox
+cd agentfox
 ./install.sh
 ```
 
